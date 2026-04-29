@@ -128,6 +128,7 @@ export default async function StoryEditorPage({
                     arc_storyline: toStoryline(story.arc_storyline),
                     clip_url: story.clip_url,
                     cover_image_url: story.cover_image_url,
+                    is_live: story.is_live,
                   }}
                 />
               </div>

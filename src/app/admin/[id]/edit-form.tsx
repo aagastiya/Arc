@@ -16,7 +16,7 @@ type EditFormProps = {
     arc_storyline: StorylineItem[];
     clip_url: string | null;
     cover_image_url: string | null;
-    is_live?: boolean;
+    is_live: boolean;
   };
 };
 
@@ -38,6 +38,23 @@ export function EditForm({ story }: EditFormProps) {
   const [isTogglingPublish, setIsTogglingPublish] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+
+  // Keep local form state in sync with fresh server props after `router.refresh()`.
+  useEffect(() => {
+    setArcHeadline(story.arc_headline);
+    setArcSummary(story.arc_summary);
+    setArcStoryline(story.arc_storyline);
+    setCoverImageUrl(story.cover_image_url);
+    setClipUrl(story.clip_url);
+    setIsLive(Boolean(story.is_live));
+  }, [
+    story.arc_headline,
+    story.arc_summary,
+    story.arc_storyline,
+    story.cover_image_url,
+    story.clip_url,
+    story.is_live,
+  ]);
 
   useEffect(() => {
     if (!savedMessage) {
