@@ -1,7 +1,11 @@
+import Link from "next/link";
+
 import { formatRelativeTime } from "@/lib/time";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 import { GenerateArcButton } from "./generate-arc-button";
+
+export const dynamic = "force-dynamic";
 
 type ArticleRow = {
   id: string;
@@ -12,6 +16,7 @@ type ArticleRow = {
 };
 
 type StoryRow = {
+  id: string;
   article_id: string;
   is_live: boolean;
 };
@@ -38,7 +43,7 @@ function getStatus(story: StoryRow | undefined) {
 }
 
 export default async function AdminPage() {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: articles, error: articlesError } = await supabase
     .from("articles")
@@ -57,7 +62,7 @@ export default async function AdminPage() {
   if (articleIds.length > 0) {
     const { data: stories, error: storiesError } = await supabase
       .from("stories")
-      .select("article_id,is_live")
+      .select("id,article_id,is_live")
       .in("article_id", articleIds);
 
     if (storiesError) {
@@ -97,7 +102,16 @@ export default async function AdminPage() {
                 return (
                   <tr key={article.id} className="align-top hover:bg-zinc-900/50">
                     <td className="px-4 py-3">
-                      <p className="max-w-2xl leading-5 text-zinc-100">{article.title}</p>
+                      {story ? (
+                        <Link
+                          href={`/admin/${story.id}`}
+                          className="max-w-2xl leading-5 text-zinc-100 hover:text-[#c8ff00] hover:underline"
+                        >
+                          {article.title}
+                        </Link>
+                      ) : (
+                        <p className="max-w-2xl leading-5 text-zinc-100">{article.title}</p>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-zinc-300">
                       {sourceName}
