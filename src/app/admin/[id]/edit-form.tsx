@@ -17,6 +17,7 @@ type EditFormProps = {
     clip_url: string | null;
     cover_image_url: string | null;
     is_live: boolean;
+    is_section_hero: boolean;
   };
 };
 
@@ -31,6 +32,7 @@ export function EditForm({ story }: EditFormProps) {
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(story.cover_image_url);
   const [clipUrl, setClipUrl] = useState<string | null>(story.clip_url);
   const [isLive, setIsLive] = useState(Boolean(story.is_live));
+  const [isSectionHero, setIsSectionHero] = useState(Boolean(story.is_section_hero));
 
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [isUploadingClip, setIsUploadingClip] = useState(false);
@@ -159,6 +161,7 @@ export function EditForm({ story }: EditFormProps) {
           arc_storyline: arcStoryline,
           clip_url: clipUrl,
           cover_image_url: coverImageUrl,
+          is_section_hero: isSectionHero,
         }),
       });
 
@@ -347,6 +350,24 @@ export function EditForm({ story }: EditFormProps) {
             className="hidden"
           />
         </div>
+      </div>
+
+      <div className="rounded-md border border-zinc-800 bg-zinc-950/60 p-4">
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={isSectionHero}
+            onChange={(event) => setIsSectionHero(event.target.checked)}
+            className="mt-1 h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-[#c8ff00] ring-offset-zinc-950 focus:ring-2 focus:ring-[#c8ff00]"
+          />
+          <span>
+            <span className="block text-sm font-medium text-zinc-200">Set as section hero</span>
+            <span className="mt-0.5 block text-xs text-zinc-500">
+              One story per category can be the section hero on /today. Saving turns off the
+              previous hero in this category.
+            </span>
+          </span>
+        </label>
       </div>
 
       <div className="rounded-md border border-zinc-800 bg-zinc-950/60 p-4">

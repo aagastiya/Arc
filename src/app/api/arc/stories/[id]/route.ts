@@ -104,6 +104,32 @@ export async function PATCH(
     }
 
     const supabase = createAdminClient();
+
+    const needsExistingRow = hasOwn(body, "is_live") || hasOwn(body, "is_section_hero");
+
+    let existingRow: { category: string | null; is_live: boolean; published_at: string | null } | null =
+      null;
+
+    if (needsExistingRow) {
+      const { data: row, error: rowError } = await supabase
+        .from("stories")
+        .select("category,is_live,published_at")
+        .eq("id", id)
+        .single();
+
+      if (rowError) {
+        if (rowError.code === "PGRST116") {
+          return NextResponse.json({ error: "Story not found" }, { status: 404 });
+        }
+        return NextResponse.json(
+          { error: "Failed to load story", details: rowError.message },
+          { status: 500 },
+        );
+      }
+
+      existingRow = row;
+    }
+
     if (hasOwn(body, "is_live")) {
       const value = body.is_live;
       if (typeof value !== "boolean") {
@@ -113,26 +139,58 @@ export async function PATCH(
         );
       }
 
-      const { data: existingStory, error: existingStoryError } = await supabase
-        .from("stories")
-        .select("is_live,published_at")
-        .eq("id", id)
-        .single();
-
-      if (existingStoryError) {
-        if (existingStoryError.code === "PGRST116") {
-          return NextResponse.json({ error: "Story not found" }, { status: 404 });
-        }
+      if (!existingRow) {
         return NextResponse.json(
-          { error: "Failed to update story", details: existingStoryError.message },
+          { error: "Failed to load story for publish update" },
           { status: 500 },
         );
       }
 
       updateData.is_live = value;
-      if (value === true && existingStory.is_live === false && !existingStory.published_at) {
+      if (value === true && existingRow.is_live === false && !existingRow.published_at) {
         updateData.published_at = new Date().toISOString();
       }
+    }
+
+    if (hasOwn(body, "is_section_hero")) {
+      const value = body.is_section_hero;
+      if (typeof value !== "boolean") {
+        return NextResponse.json(
+          { error: "is_section_hero must be a boolean" },
+          { status: 400 },
+        );
+      }
+
+      if (!existingRow) {
+        return NextResponse.json(
+          { error: "Failed to load story for section hero update" },
+          { status: 500 },
+        );
+      }
+
+      const category = existingRow.category;
+
+      if (value === true) {
+        let clearQuery = supabase
+          .from("stories")
+          .update({ is_section_hero: false })
+          .neq("id", id);
+        clearQuery =
+          category == null
+            ? clearQuery.is("category", null)
+            : clearQuery.eq("category", category);
+
+        const { error: clearError } = await clearQuery;
+
+        if (clearError) {
+          return NextResponse.json(
+            { error: "Failed to clear other section heroes", details: clearError.message },
+            { status: 500 },
+          );
+        }
+      }
+
+      updateData.is_section_hero = value;
     }
 
     const { data, error } = await supabase

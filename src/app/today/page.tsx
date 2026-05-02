@@ -1,18 +1,17 @@
 // Today feed structure: category nav → category sections only. No global hero. Every story belongs to exactly one category section.
 
-import Image from "next/image";
-import Link from "next/link";
-
 import { ArcWordmark } from "@/components/arc-wordmark";
 import { CategoryNav } from "@/components/category-nav";
+import { SectionHeroCard } from "@/components/section-hero-card";
+import { SectionMiniCard } from "@/components/section-mini-card";
 import {
   CANONICAL_CATEGORY_ORDER,
   categorySectionId,
+  findSectionHero,
   normalizeStoryCategory,
   type StoryCategoryBucket,
 } from "@/lib/categories";
 import { getLiveStories, type LiveStory } from "@/lib/stories";
-import { formatRelativeTime } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -21,64 +20,6 @@ function formatTopDate(date: Date): string {
   const dayOfMonth = date.toLocaleDateString("en-US", { day: "2-digit" });
   const month = date.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
   return `${day} ${dayOfMonth} ${month}`;
-}
-
-function metaLine(story: LiveStory): string {
-  const category = story.category.toUpperCase();
-  return story.source_name ? `${story.source_name.toUpperCase()} · ${category}` : category;
-}
-
-function Cover({
-  story,
-  compact,
-}: {
-  story: LiveStory;
-  compact?: boolean;
-}) {
-  return (
-    <div className="relative aspect-video w-full overflow-hidden rounded-t-xl bg-[#1a1a1a]">
-      {story.cover_image_url ? (
-        <Image
-          src={story.cover_image_url}
-          alt={story.arc_headline}
-          fill
-          unoptimized
-          className="object-cover"
-          sizes={compact ? "(max-width: 640px) 100vw, 50vw" : "100vw"}
-        />
-      ) : (
-        <div className="flex h-full items-center justify-center bg-[#222]">
-          <span className="text-xs font-semibold tracking-[0.18em] text-[#c8ff00]">
-            {story.category.toUpperCase()}
-          </span>
-        </div>
-      )}
-
-      {story.clip_url ? (
-        <div className="absolute bottom-3 left-3 flex h-9 w-9 items-center justify-center rounded-full bg-[#c8ff00]">
-          <span className="ml-[2px] inline-block h-0 w-0 border-y-[6px] border-y-transparent border-l-[10px] border-l-white" />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function StoryCard({ story }: { story: LiveStory }) {
-  return (
-    <Link
-      href={`/today/${story.id}`}
-      className="block overflow-hidden rounded-xl border border-zinc-800 bg-[#0f0f0f] transition hover:border-zinc-600"
-    >
-      <Cover story={story} compact />
-      <div className="space-y-2 p-3">
-        <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">{metaLine(story)}</p>
-        <h3 className="line-clamp-3 text-base font-bold leading-snug text-zinc-100 [font-family:var(--font-syne)]">
-          {story.arc_headline}
-        </h3>
-        <p className="text-[10px] text-zinc-500">{formatRelativeTime(story.published_at) || "Unknown"}</p>
-      </div>
-    </Link>
-  );
 }
 
 function groupStoriesByCategory(stories: LiveStory[]): Map<StoryCategoryBucket, LiveStory[]> {
@@ -105,6 +46,9 @@ function CategoryFeedSection({
   bucket: StoryCategoryBucket;
   stories: LiveStory[];
 }) {
+  const hero = findSectionHero(stories);
+  const rest = hero ? stories.filter((s) => s.id !== hero.id) : [];
+
   return (
     <section id={categorySectionId(bucket)}>
       <header className="mb-4">
@@ -117,13 +61,18 @@ function CategoryFeedSection({
         <p className="py-8 text-center text-sm italic text-zinc-500">
           No stories in this section yet.
         </p>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {stories.map((story) => (
-            <StoryCard key={story.id} story={story} />
-          ))}
-        </div>
-      )}
+      ) : hero ? (
+        <>
+          <SectionHeroCard story={hero} categoryLabel={title} />
+          {rest.length > 0 ? (
+            <div className="mt-3 grid grid-cols-2 gap-2.5">
+              {rest.map((story) => (
+                <SectionMiniCard key={story.id} story={story} categoryLabel={title} />
+              ))}
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </section>
   );
 }

@@ -40,7 +40,7 @@ export default async function StoryEditorPage({
     const { data: story, error: storyError } = await supabase
       .from("stories")
       .select(
-        "id,article_id,arc_headline,arc_summary,arc_storyline,clip_url,cover_image_url,is_live,category",
+        "id,article_id,arc_headline,arc_summary,arc_storyline,clip_url,cover_image_url,is_live,is_section_hero,category",
       )
       .eq("id", id)
       .single();
@@ -129,6 +129,7 @@ export default async function StoryEditorPage({
                     clip_url: story.clip_url,
                     cover_image_url: story.cover_image_url,
                     is_live: story.is_live,
+                    is_section_hero: Boolean(story.is_section_hero),
                   }}
                 />
               </div>

@@ -8,6 +8,7 @@ export type LiveStory = {
   clip_url: string | null;
   cover_image_url: string | null;
   category: string;
+  is_section_hero: boolean;
   published_at: string | null;
   original_title: string;
   original_link: string;
@@ -22,6 +23,7 @@ type StoryRow = {
   clip_url: string | null;
   cover_image_url: string | null;
   category: string;
+  is_section_hero: boolean;
   published_at: string | null;
   articles:
     | {
@@ -83,6 +85,7 @@ function toLiveStory(row: StoryRow): LiveStory {
     clip_url: row.clip_url,
     cover_image_url: row.cover_image_url,
     category: row.category,
+    is_section_hero: Boolean(row.is_section_hero),
     published_at: row.published_at,
     original_title: article?.title ?? "",
     original_link: article?.link ?? "",
@@ -96,7 +99,7 @@ export async function getLiveStories(): Promise<LiveStory[]> {
     const { data, error } = await supabase
       .from("stories")
       .select(
-        "id,arc_headline,arc_summary,arc_storyline,clip_url,cover_image_url,category,published_at,articles(title,link,feeds(source_name))",
+        "id,arc_headline,arc_summary,arc_storyline,clip_url,cover_image_url,category,is_section_hero,published_at,articles(title,link,feeds(source_name))",
       )
       .eq("is_live", true)
       .order("published_at", { ascending: false, nullsFirst: false })
@@ -123,7 +126,7 @@ export async function getLiveStoryById(id: string): Promise<LiveStory | null> {
     const { data, error } = await supabase
       .from("stories")
       .select(
-        "id,arc_headline,arc_summary,arc_storyline,clip_url,cover_image_url,category,published_at,articles(title,link,feeds(source_name))",
+        "id,arc_headline,arc_summary,arc_storyline,clip_url,cover_image_url,category,is_section_hero,published_at,articles(title,link,feeds(source_name))",
       )
       .eq("id", id)
       .eq("is_live", true)

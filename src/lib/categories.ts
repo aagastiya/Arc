@@ -1,3 +1,5 @@
+import type { LiveStory } from "@/lib/stories";
+
 export const CANONICAL_CATEGORY_ORDER = [
   "World",
   "India",
@@ -39,4 +41,16 @@ export function normalizeStoryCategory(raw: string): StoryCategoryBucket {
 export function categorySectionId(name: StoryCategoryBucket): string {
   const slug = name === "Other" ? "other" : name.toLowerCase();
   return `section-${slug}`;
+}
+
+/** Picks the section lead: explicit `is_section_hero`, else newest (first in list), else null. */
+export function findSectionHero(stories: LiveStory[]): LiveStory | null {
+  if (stories.length === 0) {
+    return null;
+  }
+  const flagged = stories.find((s) => s.is_section_hero === true);
+  if (flagged) {
+    return flagged;
+  }
+  return stories[0] ?? null;
 }
