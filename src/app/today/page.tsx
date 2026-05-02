@@ -1,7 +1,16 @@
+// Today feed structure: category nav → category sections only. No global hero. Every story belongs to exactly one category section.
+
 import Image from "next/image";
 import Link from "next/link";
 
 import { ArcWordmark } from "@/components/arc-wordmark";
+import { CategoryNav } from "@/components/category-nav";
+import {
+  CANONICAL_CATEGORY_ORDER,
+  categorySectionId,
+  normalizeStoryCategory,
+  type StoryCategoryBucket,
+} from "@/lib/categories";
 import { getLiveStories, type LiveStory } from "@/lib/stories";
 import { formatRelativeTime } from "@/lib/time";
 
@@ -54,25 +63,6 @@ function Cover({
   );
 }
 
-function HeroCard({ story }: { story: LiveStory }) {
-  return (
-    <Link
-      href={`/today/${story.id}`}
-      className="block overflow-hidden rounded-xl border border-zinc-800 bg-[#0f0f0f] transition hover:border-zinc-600"
-    >
-      <Cover story={story} />
-      <div className="space-y-3 p-4">
-        <p className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">{metaLine(story)}</p>
-        <h2 className="line-clamp-3 text-2xl font-bold leading-tight text-zinc-100 [font-family:var(--font-syne)]">
-          {story.arc_headline}
-        </h2>
-        <p className="text-sm leading-6 text-zinc-400">{story.arc_summary}</p>
-        <p className="text-xs text-zinc-500">{formatRelativeTime(story.published_at) || "Unknown"}</p>
-      </div>
-    </Link>
-  );
-}
-
 function StoryCard({ story }: { story: LiveStory }) {
   return (
     <Link
@@ -91,10 +81,60 @@ function StoryCard({ story }: { story: LiveStory }) {
   );
 }
 
+function groupStoriesByCategory(stories: LiveStory[]): Map<StoryCategoryBucket, LiveStory[]> {
+  const map = new Map<StoryCategoryBucket, LiveStory[]>();
+  for (const name of CANONICAL_CATEGORY_ORDER) {
+    map.set(name, []);
+  }
+  map.set("Other", []);
+
+  for (const story of stories) {
+    const bucket = normalizeStoryCategory(story.category);
+    map.get(bucket)!.push(story);
+  }
+
+  return map;
+}
+
+function CategoryFeedSection({
+  title,
+  bucket,
+  stories,
+}: {
+  title: string;
+  bucket: StoryCategoryBucket;
+  stories: LiveStory[];
+}) {
+  return (
+    <section id={categorySectionId(bucket)}>
+      <header className="mb-4">
+        <h2 className="text-xl font-bold leading-tight text-white [font-family:var(--font-syne)]">
+          {title}
+        </h2>
+        <div className="mt-2 h-0.5 w-10 bg-[#c8ff00]" aria-hidden />
+      </header>
+      {stories.length === 0 ? (
+        <p className="py-8 text-center text-sm italic text-zinc-500">
+          No stories in this section yet.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {stories.map((story) => (
+            <StoryCard key={story.id} story={story} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default async function TodayPage() {
   const stories = await getLiveStories();
-  const [hero, ...rest] = stories;
   const todayDate = formatTopDate(new Date());
+
+  /** All live stories, bucketed once — sections read from this map only (no hero/rest split). */
+  const grouped = groupStoriesByCategory(stories);
+  const otherStories = grouped.get("Other") ?? [];
 
   return (
     <main className="min-h-screen bg-[#1a1a1a] text-zinc-100">
@@ -110,20 +150,26 @@ export default async function TodayPage() {
         </div>
       </header>
 
+      {stories.length > 0 ? <CategoryNav /> : null}
+
       <section className="mx-auto w-full max-w-6xl px-6 py-6">
         {stories.length === 0 ? (
           <div className="flex min-h-[55vh] items-center justify-center">
-            <p className="text-lg text-zinc-400">Today's stories coming soon.</p>
+            <p className="text-lg text-zinc-400">{"Today's stories coming soon."}</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            <HeroCard story={hero} />
-            {rest.length > 0 ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {rest.map((story) => (
-                  <StoryCard key={story.id} story={story} />
-                ))}
-              </div>
+          <div className="space-y-12">
+            {CANONICAL_CATEGORY_ORDER.map((name) => (
+              <CategoryFeedSection
+                key={name}
+                title={name}
+                bucket={name}
+                stories={grouped.get(name) ?? []}
+              />
+            ))}
+
+            {otherStories.length > 0 ? (
+              <CategoryFeedSection title="Other" bucket="Other" stories={otherStories} />
             ) : null}
           </div>
         )}
