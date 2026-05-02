@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 const MAX_CLIP_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_COVER_SIZE_BYTES = 5 * 1024 * 1024;
 const COVER_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -35,9 +38,9 @@ export async function POST(request: Request) {
       );
     }
 
-    if (bucketValue !== "clips" && bucketValue !== "covers") {
+    if (bucketValue !== "clips" && bucketValue !== "cover") {
       return NextResponse.json(
-        { error: "Invalid bucket: must be exactly 'clips' or 'covers'." },
+        { error: "Invalid bucket: must be exactly 'clips' or 'cover'." },
         { status: 400 },
       );
     }
@@ -57,7 +60,7 @@ export async function POST(request: Request) {
       }
     }
 
-    if (bucketValue === "covers") {
+    if (bucketValue === "cover") {
       if (!COVER_MIME_TYPES.has(fileValue.type)) {
         return NextResponse.json(
           {

@@ -44,15 +44,11 @@ export function EditForm({ story }: EditFormProps) {
     setArcHeadline(story.arc_headline);
     setArcSummary(story.arc_summary);
     setArcStoryline(story.arc_storyline);
-    setCoverImageUrl(story.cover_image_url);
-    setClipUrl(story.clip_url);
     setIsLive(Boolean(story.is_live));
   }, [
     story.arc_headline,
     story.arc_summary,
     story.arc_storyline,
-    story.cover_image_url,
-    story.clip_url,
     story.is_live,
   ]);
 
@@ -69,7 +65,7 @@ export function EditForm({ story }: EditFormProps) {
     [isSaving, isUploadingCover, isUploadingClip, isTogglingPublish],
   );
 
-  const handleUpload = async (file: File, bucket: "clips" | "covers") => {
+  const handleUpload = async (file: File, bucket: "clips" | "cover") => {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("bucket", bucket);
@@ -103,7 +99,7 @@ export function EditForm({ story }: EditFormProps) {
     setError(null);
     setIsUploadingCover(true);
     try {
-      const url = await handleUpload(file, "covers");
+      const url = await handleUpload(file, "cover");
       setCoverImageUrl(url);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to upload cover image.");
