@@ -64,7 +64,7 @@ export function FeedApp({
             className="text-xl font-black tracking-tight"
             style={{ color: ACCENT }}
           >
-            NEWOOZ
+            Arc
           </span>
           <span className="rounded-full border border-zinc-800 bg-zinc-950 px-3 py-1 text-xs text-zinc-400">
             {dateLabel}

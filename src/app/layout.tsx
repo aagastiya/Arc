@@ -25,8 +25,8 @@ const sora = Sora({
 });
 
 export const metadata: Metadata = {
-  title: "NEWOOZ",
-  description: "News feed with RSS and Supabase",
+  title: "Arc",
+  description: "Arc.",
 };
 
 export default function RootLayout({
