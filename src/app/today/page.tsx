@@ -51,14 +51,18 @@ function CategoryFeedSection({
 
   return (
     <section id={categorySectionId(bucket)}>
-      <header className="mb-4">
-        <h2 className="text-xl font-bold leading-tight text-white [font-family:var(--font-syne)]">
+      <header className="mb-2.5 flex items-center gap-2">
+        <span
+          className="h-0.5 w-6 shrink-0 rounded-full"
+          style={{ backgroundColor: "#c8ff00" }}
+          aria-hidden
+        />
+        <h2 className="text-sm font-bold uppercase tracking-widest text-zinc-400 [font-family:var(--font-syne)]">
           {title}
         </h2>
-        <div className="mt-2 h-0.5 w-10 bg-[#c8ff00]" aria-hidden />
       </header>
       {stories.length === 0 ? (
-        <p className="py-8 text-center text-sm italic text-zinc-500">
+        <p className="py-8 text-center text-xs italic text-zinc-600">
           No stories in this section yet.
         </p>
       ) : hero ? (
@@ -107,7 +111,7 @@ export default async function TodayPage() {
             <p className="text-lg text-zinc-400">{"Today's stories coming soon."}</p>
           </div>
         ) : (
-          <div className="space-y-12">
+          <div className="space-y-8">
             {CANONICAL_CATEGORY_ORDER.map((name) => (
               <CategoryFeedSection
                 key={name}
