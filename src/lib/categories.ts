@@ -38,6 +38,48 @@ export function normalizeStoryCategory(raw: string): StoryCategoryBucket {
   return "Other";
 }
 
+/** Admin + API: allowed `stories.category` values (lowercase). */
+export const CATEGORY_DROPDOWN_OPTIONS = [
+  { value: "world", label: "Geopolitics" },
+  { value: "india", label: "India" },
+  { value: "finance", label: "Finance" },
+  { value: "tech", label: "Tech" },
+  { value: "sports", label: "Sports" },
+  { value: "local", label: "Local" },
+] as const;
+
+export type StoryCategoryDbValue = (typeof CATEGORY_DROPDOWN_OPTIONS)[number]["value"];
+
+export function isAllowedStoryCategoryDbValue(value: string): value is StoryCategoryDbValue {
+  return CATEGORY_DROPDOWN_OPTIONS.some((o) => o.value === value);
+}
+
+/**
+ * Maps a normalized canonical category back to its lowercase DB value (inverse of the
+ * normalizer for canonical buckets only). Unknown input normalizes via `normalizeStoryCategory`
+ * first; `Other` maps to `world`.
+ */
+export function canonicalCategoryToDbValue(canonical: string): StoryCategoryDbValue {
+  const bucket = normalizeStoryCategory(canonical);
+  switch (bucket) {
+    case "World":
+      return "world";
+    case "India":
+      return "india";
+    case "Finance":
+      return "finance";
+    case "Tech":
+      return "tech";
+    case "Sports":
+      return "sports";
+    case "Local":
+      return "local";
+    case "Other":
+    default:
+      return "world";
+  }
+}
+
 export function categorySectionId(name: StoryCategoryBucket): string {
   const slug = name === "Other" ? "other" : name.toLowerCase();
   return `section-${slug}`;

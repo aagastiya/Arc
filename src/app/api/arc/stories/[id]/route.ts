@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isAllowedStoryCategoryDbValue } from "@/lib/categories";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type StorylineItem = {
@@ -103,6 +104,23 @@ export async function PATCH(
       updateData.cover_image_url = value;
     }
 
+    let validatedCategoryFromBody: string | undefined;
+
+    if (hasOwn(body, "category")) {
+      const value = body.category;
+      if (typeof value !== "string" || !isAllowedStoryCategoryDbValue(value)) {
+        return NextResponse.json(
+          {
+            error:
+              "category must be a string equal to one of: world, india, finance, tech, sports, local",
+          },
+          { status: 400 },
+        );
+      }
+      validatedCategoryFromBody = value;
+      updateData.category = value;
+    }
+
     const supabase = createAdminClient();
 
     const needsExistingRow = hasOwn(body, "is_live") || hasOwn(body, "is_section_hero");
@@ -168,7 +186,7 @@ export async function PATCH(
         );
       }
 
-      const category = existingRow.category;
+      const categoryForClear = validatedCategoryFromBody ?? existingRow.category;
 
       if (value === true) {
         let clearQuery = supabase
@@ -176,9 +194,9 @@ export async function PATCH(
           .update({ is_section_hero: false })
           .neq("id", id);
         clearQuery =
-          category == null
+          categoryForClear == null
             ? clearQuery.is("category", null)
-            : clearQuery.eq("category", category);
+            : clearQuery.eq("category", categoryForClear);
 
         const { error: clearError } = await clearQuery;
 

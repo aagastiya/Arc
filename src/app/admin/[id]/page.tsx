@@ -130,6 +130,7 @@ export default async function StoryEditorPage({
                     cover_image_url: story.cover_image_url,
                     is_live: story.is_live,
                     is_section_hero: Boolean(story.is_section_hero),
+                    category: typeof story.category === "string" ? story.category : "",
                   }}
                 />
               </div>

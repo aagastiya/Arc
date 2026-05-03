@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import {
+  canonicalCategoryToDbValue,
+  CATEGORY_DROPDOWN_OPTIONS,
+} from "@/lib/categories";
+
 type StorylineItem = {
   date: string;
   event: string;
@@ -18,6 +23,7 @@ type EditFormProps = {
     cover_image_url: string | null;
     is_live: boolean;
     is_section_hero: boolean;
+    category: string;
   };
 };
 
@@ -33,6 +39,9 @@ export function EditForm({ story }: EditFormProps) {
   const [clipUrl, setClipUrl] = useState<string | null>(story.clip_url);
   const [isLive, setIsLive] = useState(Boolean(story.is_live));
   const [isSectionHero, setIsSectionHero] = useState(Boolean(story.is_section_hero));
+  const [category, setCategory] = useState<string>(() =>
+    canonicalCategoryToDbValue(story.category),
+  );
 
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [isUploadingClip, setIsUploadingClip] = useState(false);
@@ -53,6 +62,12 @@ export function EditForm({ story }: EditFormProps) {
     story.arc_storyline,
     story.is_live,
   ]);
+
+  // Sync category from server after `router.refresh()` (same pattern as headline/summary sync).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional props → state sync
+    setCategory(canonicalCategoryToDbValue(story.category));
+  }, [story.category]);
 
   useEffect(() => {
     if (!savedMessage) {
@@ -162,6 +177,7 @@ export function EditForm({ story }: EditFormProps) {
           clip_url: clipUrl,
           cover_image_url: coverImageUrl,
           is_section_hero: isSectionHero,
+          category,
         }),
       });
 
@@ -233,6 +249,24 @@ export function EditForm({ story }: EditFormProps) {
           onChange={(event) => setArcHeadline(event.target.value)}
           className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100 outline-none ring-[#c8ff00] focus:ring-2"
         />
+      </div>
+
+      <div>
+        <label htmlFor="story-category" className="mb-2 block text-sm text-zinc-400">
+          Category
+        </label>
+        <select
+          id="story-category"
+          value={category}
+          onChange={(event) => setCategory(event.target.value)}
+          className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100 outline-none ring-[#c8ff00] focus:ring-2"
+        >
+          {CATEGORY_DROPDOWN_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div>
