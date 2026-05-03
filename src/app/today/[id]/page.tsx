@@ -47,10 +47,10 @@ export default async function TodayStoryPage({
   const categoryPill = canonicalCategory.toUpperCase();
 
   return (
-    <main className="min-h-screen w-full bg-[#0a0a0a] text-zinc-100">
+    <main className="relative min-h-screen w-full bg-[#0a0a0a] text-zinc-100">
       <div
-        className="flex w-full items-center gap-2"
-        style={{ padding: "14px 16px" }}
+        className="absolute left-0 right-0 z-20 flex w-full items-center gap-2"
+        style={{ top: "12px", padding: "14px 16px" }}
       >
         <Link
           href="/today"
@@ -91,25 +91,10 @@ export default async function TodayStoryPage({
         clipUrl={story.clip_url}
         coverUrl={story.cover_image_url}
         headline={story.arc_headline}
+        summaryPreview={story.arc_summary}
       />
 
-      <div
-        className="w-full"
-        style={{
-          background: "#0a0a0a",
-          padding: "16px 18px 14px",
-        }}
-      >
-        <p
-          className="font-normal"
-          style={{
-            fontSize: "13px",
-            lineHeight: 1.6,
-            color: "rgba(240,237,232,0.7)",
-          }}
-        >
-          {story.arc_summary}
-        </p>
+      <div style={{ background: "#0a0a0a", padding: "16px 18px" }}>
         <StorylineToggle items={story.arc_storyline} />
       </div>
 
