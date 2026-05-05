@@ -25,7 +25,7 @@ export default async function AdminPage() {
     .from("articles")
     .select("id,title,category,published_at,feeds(source_name)")
     .order("published_at", { ascending: false, nullsFirst: false })
-    .limit(50);
+    .limit(200);
 
   if (articlesError) {
     throw new Error(`Failed to load articles: ${articlesError.message}`);
