@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ClipPlayer } from "@/components/clip-player";
 import { StorylineToggle } from "@/components/storyline-toggle";
 import { normalizeStoryCategory } from "@/lib/categories";
+import { createClient } from "@/lib/supabase/server";
 import { getLiveStoryById } from "@/lib/stories";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +29,21 @@ export default async function TodayStoryPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const story = await getLiveStoryById(id);
+  const [story, supabase] = await Promise.all([getLiveStoryById(id), createClient()]);
+
+  const { data: allLiveStoryIds } = await supabase
+    .from("stories")
+    .select("id")
+    .eq("is_live", true)
+    .order("published_at", { ascending: false, nullsFirst: false });
+
+  const orderedStoryIds = (allLiveStoryIds ?? []).map((row) => row.id);
+  const currentIndex = orderedStoryIds.indexOf(id);
+  const prevStoryId = currentIndex > 0 ? orderedStoryIds[currentIndex - 1] : null;
+  const nextStoryId =
+    currentIndex >= 0 && currentIndex < orderedStoryIds.length - 1
+      ? orderedStoryIds[currentIndex + 1]
+      : null;
 
   if (!story) {
     return (
@@ -92,6 +107,8 @@ export default async function TodayStoryPage({
         coverUrl={story.cover_image_url}
         headline={story.arc_headline}
         summaryPreview={story.arc_summary}
+        prevStoryId={prevStoryId}
+        nextStoryId={nextStoryId}
       />
 
       <div style={{ background: "#0a0a0a", padding: "16px 18px" }}>
