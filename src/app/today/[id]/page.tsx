@@ -1,12 +1,66 @@
 import Link from "next/link";
 
 import { ClipPlayer } from "@/components/clip-player";
-import { StorylineToggle } from "@/components/storyline-toggle";
+import { InlineStoryline } from "@/components/inline-storyline";
 import { normalizeStoryCategory } from "@/lib/categories";
 import { createClient } from "@/lib/supabase/server";
 import { getLiveStoryById } from "@/lib/stories";
 
 export const dynamic = "force-dynamic";
+
+function slugifyHeadline(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 72);
+  return slug || "storyline";
+}
+
+function buildStorylineSlug(headline: string, category: string): string {
+  const h = headline.toLowerCase();
+  const c = category.toLowerCase();
+
+  if (
+    h.includes("iran") ||
+    h.includes("israel") ||
+    h.includes("gaza") ||
+    h.includes("tehran")
+  ) {
+    return "iran-us-israel-tensions";
+  }
+  if (
+    h.includes("ipl") ||
+    h.includes("cricket") ||
+    h.includes("bcci") ||
+    h.includes("t20")
+  ) {
+    return "ipl-2026";
+  }
+  if (
+    h.includes("openai") ||
+    h.includes("chatgpt") ||
+    h.includes("google ai") ||
+    h.includes("gemini") ||
+    h.includes("anthropic")
+  ) {
+    return "openai-google-ai-race";
+  }
+
+  if (c === "sports") {
+    return "sports-season-watch";
+  }
+  if (c === "tech") {
+    return "global-ai-platform-shift";
+  }
+  if (c === "finance") {
+    return "global-market-volatility-watch";
+  }
+
+  return slugifyHeadline(headline);
+}
 
 function formatPublishedDate(iso: string | null): string {
   if (!iso) {
@@ -60,6 +114,7 @@ export default async function TodayStoryPage({
 
   const canonicalCategory = normalizeStoryCategory(story.category);
   const categoryPill = canonicalCategory.toUpperCase();
+  const storylineSlug = buildStorylineSlug(story.arc_headline, story.category);
 
   return (
     <main className="relative min-h-screen w-full bg-[#0a0a0a] text-zinc-100">
@@ -112,7 +167,7 @@ export default async function TodayStoryPage({
       />
 
       <div style={{ background: "#0a0a0a", padding: "16px 18px" }}>
-        <StorylineToggle items={story.arc_storyline} />
+        <InlineStoryline slug={storylineSlug} timelineItems={story.arc_storyline} />
       </div>
 
       <footer
