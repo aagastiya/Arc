@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
 
@@ -122,6 +123,26 @@ export function ClipPlayer({
       className="relative h-screen w-full overflow-hidden bg-[#0a0a0a]"
       style={{ touchAction: "pan-y" }}
     >
+      <Link
+        href="/today"
+        aria-label="Back to Today"
+        className="absolute left-4 top-4 z-50 inline-flex min-h-11 min-w-11 items-center justify-center p-2.5 text-zinc-300/70 transition-opacity hover:opacity-100 hover:text-zinc-100"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <path d="M15 18l-6-6 6-6" />
+        </svg>
+      </Link>
+
       {clipUrl ? (
         <>
           <video

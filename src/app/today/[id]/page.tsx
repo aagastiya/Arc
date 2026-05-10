@@ -2,7 +2,11 @@ import Link from "next/link";
 
 import { ClipPlayer } from "@/components/clip-player";
 import { InlineStoryline } from "@/components/inline-storyline";
-import { normalizeStoryCategory } from "@/lib/categories";
+import {
+  CANONICAL_CATEGORY_ORDER,
+  normalizeStoryCategory,
+  type CanonicalCategory,
+} from "@/lib/categories";
 import { createClient } from "@/lib/supabase/server";
 import { getLiveStoryById } from "@/lib/stories";
 
@@ -85,18 +89,44 @@ export default async function TodayStoryPage({
   const { id } = await params;
   const [story, supabase] = await Promise.all([getLiveStoryById(id), createClient()]);
 
-  const { data: allLiveStoryIds } = await supabase
+  const { data: liveSwipeRows } = await supabase
     .from("stories")
-    .select("id")
+    .select("id, category, published_at")
     .eq("is_live", true)
     .order("published_at", { ascending: false, nullsFirst: false });
 
-  const orderedStoryIds = (allLiveStoryIds ?? []).map((row) => row.id);
+  type SwipeRow = { id: string; category: string; published_at: string | null };
+  const rows = (liveSwipeRows ?? []) as SwipeRow[];
+
+  const byBucket: Record<CanonicalCategory, SwipeRow[]> = {
+    World: [],
+    India: [],
+    Finance: [],
+    Tech: [],
+    Sports: [],
+    Local: [],
+  };
+
+  for (const row of rows) {
+    const bucket = normalizeStoryCategory(row.category);
+    if (bucket === "Other") {
+      continue;
+    }
+    byBucket[bucket].push(row);
+  }
+
+  const orderedStoryIds: string[] = [];
+  for (const name of CANONICAL_CATEGORY_ORDER) {
+    for (const r of byBucket[name]) {
+      orderedStoryIds.push(r.id);
+    }
+  }
+
   const currentIndex = orderedStoryIds.indexOf(id);
-  const prevStoryId = currentIndex > 0 ? orderedStoryIds[currentIndex - 1] : null;
+  const prevStoryId = currentIndex > 0 ? orderedStoryIds[currentIndex - 1]! : null;
   const nextStoryId =
     currentIndex >= 0 && currentIndex < orderedStoryIds.length - 1
-      ? orderedStoryIds[currentIndex + 1]
+      ? orderedStoryIds[currentIndex + 1]!
       : null;
 
   if (!story) {
@@ -122,14 +152,6 @@ export default async function TodayStoryPage({
         className="absolute left-0 right-0 z-20 flex w-full items-center gap-2"
         style={{ top: "12px", padding: "14px 16px" }}
       >
-        <Link
-          href="/today"
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-base leading-none text-white"
-          style={{ background: "rgba(0,0,0,0.5)" }}
-          aria-label="Close and return to feed"
-        >
-          ×
-        </Link>
         <span
           className="shrink-0 font-bold uppercase text-[#1a1a1a]"
           style={{
