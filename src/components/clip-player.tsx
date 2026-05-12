@@ -84,7 +84,7 @@ export function ClipPlayer({
         return;
       }
 
-      if (absX <= 50 || absX <= absY) {
+      if (absX <= 50 || absX < absY * 1.5) {
         return;
       }
 
@@ -121,7 +121,7 @@ export function ClipPlayer({
     <div
       ref={swipeContainerRef}
       className="relative h-[100dvh] min-h-[100svh] w-full shrink-0 overflow-hidden bg-[#0a0a0a]"
-      style={{ touchAction: "pan-y" }}
+      style={{ touchAction: "pan-y", WebkitUserSelect: "none", userSelect: "none" }}
     >
       <Link
         href="/today"
