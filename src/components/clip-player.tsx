@@ -120,7 +120,7 @@ export function ClipPlayer({
   return (
     <div
       ref={swipeContainerRef}
-      className="relative h-screen w-full overflow-hidden bg-[#0a0a0a]"
+      className="relative h-[100dvh] min-h-[100svh] w-full shrink-0 overflow-hidden bg-[#0a0a0a]"
       style={{ touchAction: "pan-y" }}
     >
       <Link
@@ -185,32 +185,14 @@ export function ClipPlayer({
         />
       )}
 
-      <div
-        className="pointer-events-none absolute bottom-0 left-0 right-0 z-[1]"
-        style={{
-          height: "60%",
-          background:
-            "linear-gradient(to top, rgba(10,10,10,0.98) 0%, rgba(10,10,10,0.85) 25%, rgba(10,10,10,0.6) 45%, rgba(10,10,10,0.2) 65%, transparent 100%)",
-        }}
-        aria-hidden
-      />
-
-      <h2
-        className="pointer-events-none absolute left-0 right-0 z-40 text-lg font-extrabold leading-[1.2] tracking-[-0.3px] text-white"
-        style={{ top: "60%", padding: "16px 18px 8px" }}
-      >
-        {headline}
-      </h2>
-
-      <p
-        className="pointer-events-none absolute left-0 right-0 z-40 text-[13px] font-normal leading-[1.45] text-white/80"
-        style={{
-          top: "calc(60% + 70px)",
-          padding: "0 18px 24px",
-        }}
-      >
-        {summaryPreview}
-      </p>
+      <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 flex h-[40%] flex-col justify-end bg-gradient-to-t from-black/85 to-transparent px-4 pb-4">
+        <h2 className="line-clamp-3 text-xl font-medium leading-[1.15] tracking-tight text-white sm:text-[22px]">
+          {headline}
+        </h2>
+        <p className="mt-2 line-clamp-2 text-[11px] font-normal leading-[1.5] text-white/70 sm:text-xs">
+          {summaryPreview}
+        </p>
+      </div>
     </div>
   );
 }

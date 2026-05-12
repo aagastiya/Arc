@@ -147,7 +147,7 @@ export default async function TodayStoryPage({
   const storylineSlug = buildStorylineSlug(story.arc_headline, story.category);
 
   return (
-    <main className="relative min-h-screen w-full bg-[#0a0a0a] text-zinc-100">
+    <main className="relative flex min-h-screen w-full flex-col bg-[#0a0a0a] text-zinc-100">
       <div
         className="absolute left-0 right-0 z-20 flex w-full items-center gap-2"
         style={{ top: "12px", padding: "14px 16px" }}
@@ -188,7 +188,7 @@ export default async function TodayStoryPage({
         nextStoryId={nextStoryId}
       />
 
-      <div style={{ background: "#0a0a0a", padding: "16px 18px" }}>
+      <div className="bg-[#0a0a0a] px-4 pb-3 pt-2">
         <InlineStoryline slug={storylineSlug} timelineItems={story.arc_storyline} />
       </div>
 
@@ -196,7 +196,7 @@ export default async function TodayStoryPage({
         className="w-full text-[10px] text-zinc-500"
         style={{
           borderTop: "0.5px solid rgba(255,255,255,0.05)",
-          padding: "16px 18px 32px",
+          padding: "12px 16px 24px",
         }}
       >
         <p className="leading-relaxed">
