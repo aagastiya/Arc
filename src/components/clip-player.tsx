@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -118,7 +119,7 @@ export function ClipPlayer({
   }, [nextStoryId, prevStoryId, router, togglePlayback]);
 
   return (
-    <div
+    <motion.div
       ref={swipeContainerRef}
       className="relative h-[100dvh] min-h-[100svh] w-full shrink-0 overflow-hidden bg-[#0a0a0a]"
       style={{ touchAction: "pan-y", WebkitUserSelect: "none", userSelect: "none" }}
@@ -193,6 +194,6 @@ export function ClipPlayer({
           {summaryPreview}
         </p>
       </div>
-    </div>
+    </motion.div>
   );
 }
