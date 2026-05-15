@@ -23,6 +23,8 @@ type Props = {
   nextStoryId: string | null;
   categoryStories: CategoryStory[];
   currentIndex: number;
+  nextCategoryFirstStoryId: string | null;
+  prevCategoryLastStoryId: string | null;
 };
 
 export function ClipPlayer({
@@ -34,6 +36,8 @@ export function ClipPlayer({
   nextStoryId,
   categoryStories,
   currentIndex,
+  nextCategoryFirstStoryId,
+  prevCategoryLastStoryId,
 }: Props) {
   const router = useRouter();
   const swipeContainerRef = useRef<HTMLDivElement>(null);
@@ -147,6 +151,9 @@ export function ClipPlayer({
         if (idx < lastIdx) {
           console.log("swipe left -> next");
           setActiveIndex(idx + 1);
+        } else if (nextCategoryFirstStoryId) {
+          console.log("swipe left -> next category", nextCategoryFirstStoryId);
+          router.push(`/today/${nextCategoryFirstStoryId}`);
         } else {
           console.log("swipe left -> informed");
           router.push("/today/informed");
@@ -157,6 +164,9 @@ export function ClipPlayer({
       if (idx > 0) {
         console.log("swipe right -> prev");
         setActiveIndex(idx - 1);
+      } else if (prevCategoryLastStoryId) {
+        console.log("swipe right -> prev category", prevCategoryLastStoryId);
+        router.push(`/today/${prevCategoryLastStoryId}`);
       }
     };
 
@@ -170,7 +180,14 @@ export function ClipPlayer({
       document.removeEventListener("touchstart", handleTouchStart, true);
       document.removeEventListener("touchend", handleTouchEnd, true);
     };
-  }, [nextStoryId, prevStoryId, router, togglePlayback]);
+  }, [
+    nextCategoryFirstStoryId,
+    nextStoryId,
+    prevCategoryLastStoryId,
+    prevStoryId,
+    router,
+    togglePlayback,
+  ]);
 
   return (
     <motion.div

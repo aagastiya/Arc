@@ -153,6 +153,35 @@ export default async function TodayStoryPage({
 
   const currentBucket = story ? normalizeStoryCategory(story.category) : "Other";
 
+  // First story (newest) in the next canonical category with live stories, or null at end of feed.
+  let nextCategoryFirstStoryId: string | null = null;
+  if (currentBucket !== "Other") {
+    const currentCatIndex = CANONICAL_CATEGORY_ORDER.indexOf(currentBucket);
+    for (let i = currentCatIndex + 1; i < CANONICAL_CATEGORY_ORDER.length; i++) {
+      const cat = CANONICAL_CATEGORY_ORDER[i]!;
+      const firstInCat = byBucket[cat][0]?.id ?? null;
+      if (firstInCat) {
+        nextCategoryFirstStoryId = firstInCat;
+        break;
+      }
+    }
+  }
+
+  // Last story (oldest) in the previous canonical category with live stories, or null at feed start.
+  let prevCategoryLastStoryId: string | null = null;
+  if (currentBucket !== "Other") {
+    const currentCatIndex = CANONICAL_CATEGORY_ORDER.indexOf(currentBucket);
+    for (let i = currentCatIndex - 1; i >= 0; i--) {
+      const cat = CANONICAL_CATEGORY_ORDER[i]!;
+      const bucketStories = byBucket[cat];
+      const lastInCat = bucketStories[bucketStories.length - 1]?.id ?? null;
+      if (lastInCat) {
+        prevCategoryLastStoryId = lastInCat;
+        break;
+      }
+    }
+  }
+
   const categoryStories = ((allLiveStories ?? []) as CategoryStoryRow[])
     .filter((s) => normalizeStoryCategory(s.category) === currentBucket)
     .map((s) => ({
@@ -226,6 +255,8 @@ export default async function TodayStoryPage({
         nextStoryId={nextStoryId}
         categoryStories={categoryStories}
         currentIndex={categoryIndex}
+        nextCategoryFirstStoryId={nextCategoryFirstStoryId}
+        prevCategoryLastStoryId={prevCategoryLastStoryId}
       />
 
       <div className="bg-[#0a0a0a] px-4 pb-3 pt-2">
