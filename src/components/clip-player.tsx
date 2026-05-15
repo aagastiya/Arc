@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type CategoryStory = {
   id: string;
@@ -15,14 +15,12 @@ type CategoryStory = {
 };
 
 type Props = {
-  // Current story fields (kept for rendering; will be retired in commit 4)
   clipUrl: string | null;
   coverUrl: string | null;
   headline: string;
   summaryPreview: string;
   prevStoryId: string | null;
   nextStoryId: string | null;
-  // New: full list of stories in the same category + this story's position
   categoryStories: CategoryStory[];
   currentIndex: number;
 };
@@ -34,23 +32,60 @@ export function ClipPlayer({
   summaryPreview,
   prevStoryId,
   nextStoryId,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  categoryStories: _categoryStories,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  currentIndex: _currentIndex,
+  categoryStories,
+  currentIndex,
 }: Props) {
   const router = useRouter();
-  const videoRef = useRef<HTMLVideoElement>(null);
   const swipeContainerRef = useRef<HTMLDivElement>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
+  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const activeIndexRef = useRef(currentIndex);
+  const storiesRef = useRef<CategoryStory[]>([]);
+
+  const stories = useMemo<CategoryStory[]>(
+    () =>
+      categoryStories.length > 0
+        ? categoryStories
+        : [{ id: "current", clipUrl, coverUrl, headline, summaryPreview }],
+    [categoryStories, clipUrl, coverUrl, headline, summaryPreview],
+  );
+
+  const [activeIndex, setActiveIndex] = useState(currentIndex);
+
+  activeIndexRef.current = activeIndex;
+  storiesRef.current = stories;
+
+  useEffect(() => {
+    setActiveIndex(currentIndex);
+  }, [currentIndex]);
+
+  useEffect(() => {
+    const story = stories[activeIndex];
+    if (story?.id && story.id !== "current") {
+      window.history.replaceState(null, "", `/today/${story.id}`);
+    }
+  }, [activeIndex, stories]);
+
+  useEffect(() => {
+    videoRefs.current.forEach((el, i) => {
+      if (!el) {
+        return;
+      }
+      if (i === activeIndex) {
+        void el.play().catch(() => {});
+      } else {
+        el.pause();
+      }
+    });
+  }, [activeIndex, stories.length]);
 
   const syncPausedFromVideo = useCallback(() => {
-    void videoRef.current?.paused;
+    const el = videoRefs.current[activeIndexRef.current];
+    void el?.paused;
   }, []);
 
   const togglePlayback = useCallback(() => {
-    const el = videoRef.current;
+    const el = videoRefs.current[activeIndexRef.current];
     if (!el) {
       return;
     }
@@ -92,7 +127,10 @@ export function ClipPlayer({
 
       const deltaX = touch.clientX - start.x;
       const deltaY = touch.clientY - start.y;
-      console.log("touch end", { deltaX, deltaY, prevStoryId, nextStoryId });
+      const idx = activeIndexRef.current;
+      const categoryList = storiesRef.current;
+      const lastIdx = categoryList.length - 1;
+      console.log("touch end", { deltaX, deltaY, prevStoryId, nextStoryId, activeIndex: idx });
       const absX = Math.abs(deltaX);
       const absY = Math.abs(deltaY);
 
@@ -106,9 +144,9 @@ export function ClipPlayer({
       }
 
       if (deltaX < 0) {
-        if (nextStoryId) {
+        if (idx < lastIdx) {
           console.log("swipe left -> next");
-          router.push(`/today/${nextStoryId}`);
+          setActiveIndex(idx + 1);
         } else {
           console.log("swipe left -> informed");
           router.push("/today/informed");
@@ -116,9 +154,9 @@ export function ClipPlayer({
         return;
       }
 
-      if (prevStoryId) {
+      if (idx > 0) {
         console.log("swipe right -> prev");
-        router.push(`/today/${prevStoryId}`);
+        setActiveIndex(idx - 1);
       }
     };
 
@@ -160,56 +198,67 @@ export function ClipPlayer({
         </svg>
       </Link>
 
-      {clipUrl ? (
-        <>
-          <video
-            ref={videoRef}
-            poster={coverUrl ?? undefined}
-            className="block h-full w-full cursor-pointer object-cover"
-            style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
-            playsInline
-            muted
-            autoPlay
-            loop
-            preload="auto"
-            controls={false}
-            {...{ "webkit-playsinline": "" }}
-            onPlay={syncPausedFromVideo}
-            onPause={syncPausedFromVideo}
+      <motion.div
+        animate={{ x: `-${activeIndex * 100}vw` }}
+        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        style={{ display: "flex", height: "100%" }}
+      >
+        {stories.map((story, idx) => (
+          <div
+            key={story.id}
+            style={{ width: "100vw", height: "100%", flexShrink: 0, position: "relative" }}
           >
-            <source src={clipUrl} type="video/mp4" />
-            Your browser does not support the video tag.
-          </video>
-          <div ref={overlayRef} className="absolute inset-0 z-30 bg-transparent" />
-        </>
-      ) : coverUrl ? (
-        <div className="absolute inset-0">
-          <Image
-            src={coverUrl}
-            alt={headline}
-            fill
-            unoptimized
-            className="object-cover"
-            sizes="100vw"
-          />
-        </div>
-      ) : (
-        <div
-          className="absolute inset-0"
-          style={{
-            background: "linear-gradient(160deg, #1a1a1a 0%, #0a0a0a 100%)",
-          }}
-        />
-      )}
+            {story.clipUrl ? (
+              <video
+                ref={(el) => {
+                  videoRefs.current[idx] = el;
+                }}
+                poster={story.coverUrl ?? undefined}
+                className="absolute inset-0 block h-full w-full cursor-pointer object-cover"
+                playsInline
+                muted
+                autoPlay={idx === activeIndex}
+                loop
+                preload="auto"
+                controls={false}
+                {...{ "webkit-playsinline": "" }}
+                onPlay={syncPausedFromVideo}
+                onPause={syncPausedFromVideo}
+              >
+                <source src={story.clipUrl} type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
+            ) : story.coverUrl ? (
+              <div className="absolute inset-0">
+                <Image
+                  src={story.coverUrl}
+                  alt={story.headline}
+                  fill
+                  unoptimized
+                  className="object-cover"
+                  sizes="100vw"
+                />
+              </div>
+            ) : (
+              <div
+                className="absolute inset-0"
+                style={{
+                  background: "linear-gradient(160deg, #1a1a1a 0%, #0a0a0a 100%)",
+                }}
+              />
+            )}
 
-      <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 flex h-[40%] flex-col justify-end bg-gradient-to-t from-black/85 to-transparent px-4 pb-4">
-        <h2 className="line-clamp-3 text-xl font-medium leading-[1.15] tracking-tight text-white sm:text-[22px]">
-          {headline}
-        </h2>
-        <p className="mt-2 line-clamp-2 text-[11px] font-normal leading-[1.5] text-white/70 sm:text-xs">
-          {summaryPreview}
-        </p>
-      </div>
+            <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 flex h-[40%] flex-col justify-end bg-gradient-to-t from-black/85 to-transparent px-4 pb-4">
+              <h2 className="line-clamp-3 text-xl font-medium leading-[1.15] tracking-tight text-white sm:text-[22px]">
+                {story.headline}
+              </h2>
+              <p className="mt-2 line-clamp-2 text-[11px] font-normal leading-[1.5] text-white/70 sm:text-xs">
+                {story.summaryPreview}
+              </p>
+            </div>
+          </div>
+        ))}
+      </motion.div>
     </motion.div>
   );
 }
