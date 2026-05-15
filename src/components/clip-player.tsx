@@ -55,6 +55,11 @@ export function ClipPlayer({
   );
 
   const [activeIndex, setActiveIndex] = useState(currentIndex);
+  const [coverHiddenByIndex, setCoverHiddenByIndex] = useState<Record<number, boolean>>({});
+
+  const hideCoverForIndex = useCallback((idx: number) => {
+    setCoverHiddenByIndex((prev) => (prev[idx] ? prev : { ...prev, [idx]: true }));
+  }, []);
 
   activeIndexRef.current = activeIndex;
   storiesRef.current = stories;
@@ -77,11 +82,14 @@ export function ClipPlayer({
       }
       if (i === activeIndex) {
         void el.play().catch(() => {});
+        if (!el.paused && el.currentTime > 0) {
+          hideCoverForIndex(i);
+        }
       } else {
         el.pause();
       }
     });
-  }, [activeIndex, stories.length]);
+  }, [activeIndex, hideCoverForIndex, stories.length]);
 
   const syncPausedFromVideo = useCallback(() => {
     const el = videoRefs.current[activeIndexRef.current];
@@ -226,25 +234,48 @@ export function ClipPlayer({
             style={{ width: "100vw", height: "100%", flexShrink: 0, position: "relative" }}
           >
             {story.clipUrl ? (
-              <video
-                ref={(el) => {
-                  videoRefs.current[idx] = el;
-                }}
-                poster={story.coverUrl ?? undefined}
-                className="absolute inset-0 block h-full w-full cursor-pointer object-cover"
-                playsInline
-                muted
-                autoPlay={idx === activeIndex}
-                loop
-                preload="auto"
-                controls={false}
-                {...{ "webkit-playsinline": "" }}
-                onPlay={syncPausedFromVideo}
-                onPause={syncPausedFromVideo}
-              >
-                <source src={story.clipUrl} type="video/mp4" />
-                Your browser does not support the video tag.
-              </video>
+              <>
+                <video
+                  ref={(el) => {
+                    videoRefs.current[idx] = el;
+                  }}
+                  poster={story.coverUrl ?? undefined}
+                  className="absolute inset-0 z-0 block h-full w-full cursor-pointer object-cover"
+                  playsInline
+                  muted
+                  autoPlay={idx === activeIndex}
+                  loop
+                  preload="auto"
+                  controls={false}
+                  {...{ "webkit-playsinline": "" }}
+                  onPlaying={() => {
+                    hideCoverForIndex(idx);
+                    syncPausedFromVideo();
+                  }}
+                  onPlay={syncPausedFromVideo}
+                  onPause={syncPausedFromVideo}
+                >
+                  <source src={story.clipUrl} type="video/mp4" />
+                  Your browser does not support the video tag.
+                </video>
+                {story.coverUrl ? (
+                  <div
+                    className="pointer-events-none absolute inset-0 z-10 transition-opacity duration-200 ease-out"
+                    style={{ opacity: coverHiddenByIndex[idx] ? 0 : 1 }}
+                    aria-hidden
+                  >
+                    <Image
+                      src={story.coverUrl}
+                      alt=""
+                      fill
+                      unoptimized
+                      priority={idx === activeIndex}
+                      className="object-cover"
+                      sizes="100vw"
+                    />
+                  </div>
+                ) : null}
+              </>
             ) : story.coverUrl ? (
               <div className="absolute inset-0">
                 <Image
