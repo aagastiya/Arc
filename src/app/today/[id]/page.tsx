@@ -89,6 +89,7 @@ export default async function TodayStoryPage({
   const { id } = await params;
   const [story, supabase] = await Promise.all([getLiveStoryById(id), createClient()]);
 
+  // ── swipe ordering: canonical category sequence ──────────────────────────
   const { data: liveSwipeRows } = await supabase
     .from("stories")
     .select("id, category, published_at")
@@ -122,12 +123,49 @@ export default async function TodayStoryPage({
     }
   }
 
-  const currentIndex = orderedStoryIds.indexOf(id);
-  const prevStoryId = currentIndex > 0 ? orderedStoryIds[currentIndex - 1]! : null;
+  const swipeIndex = orderedStoryIds.indexOf(id);
+  const prevStoryId = swipeIndex > 0 ? orderedStoryIds[swipeIndex - 1]! : null;
   const nextStoryId =
-    currentIndex >= 0 && currentIndex < orderedStoryIds.length - 1
-      ? orderedStoryIds[currentIndex + 1]!
+    swipeIndex >= 0 && swipeIndex < orderedStoryIds.length - 1
+      ? orderedStoryIds[swipeIndex + 1]!
       : null;
+
+  // ── category stories: all live stories in the same canonical category ─────
+  // We fetch all live stories and filter in JS using normalizeStoryCategory so
+  // raw DB category strings ("economy", "tech", etc.) map correctly to buckets.
+  // TODO: can optimize by adding a normalized_category DB column and filtering in SQL.
+  type CategoryStoryRow = {
+    id: string;
+    clip_url: string | null;
+    cover_image_url: string | null;
+    arc_headline: string;
+    arc_summary: string;
+    published_at: string | null;
+    category: string;
+  };
+
+  const { data: allLiveStories } = await supabase
+    .from("stories")
+    .select("id, clip_url, cover_image_url, arc_headline, arc_summary, published_at, category")
+    .eq("is_live", true)
+    .order("published_at", { ascending: false, nullsFirst: false })
+    .limit(50);
+
+  const currentBucket = story ? normalizeStoryCategory(story.category) : "Other";
+
+  const categoryStories = ((allLiveStories ?? []) as CategoryStoryRow[])
+    .filter((s) => normalizeStoryCategory(s.category) === currentBucket)
+    .map((s) => ({
+      id: s.id,
+      clipUrl: s.clip_url,
+      coverUrl: s.cover_image_url,
+      headline: s.arc_headline,
+      summaryPreview: s.arc_summary,
+    }));
+
+  // Index of the current story within the category array.
+  // Falls back to 0 if the story somehow isn't in the list (shouldn't happen).
+  const categoryIndex = Math.max(0, categoryStories.findIndex((s) => s.id === id));
 
   if (!story) {
     return (
@@ -186,6 +224,8 @@ export default async function TodayStoryPage({
         summaryPreview={story.arc_summary}
         prevStoryId={prevStoryId}
         nextStoryId={nextStoryId}
+        categoryStories={categoryStories}
+        currentIndex={categoryIndex}
       />
 
       <div className="bg-[#0a0a0a] px-4 pb-3 pt-2">

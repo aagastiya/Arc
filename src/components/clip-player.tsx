@@ -6,13 +6,25 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
 
+type CategoryStory = {
+  id: string;
+  clipUrl: string | null;
+  coverUrl: string | null;
+  headline: string;
+  summaryPreview: string;
+};
+
 type Props = {
+  // Current story fields (kept for rendering; will be retired in commit 4)
   clipUrl: string | null;
   coverUrl: string | null;
   headline: string;
   summaryPreview: string;
   prevStoryId: string | null;
   nextStoryId: string | null;
+  // New: full list of stories in the same category + this story's position
+  categoryStories: CategoryStory[];
+  currentIndex: number;
 };
 
 export function ClipPlayer({
@@ -22,6 +34,10 @@ export function ClipPlayer({
   summaryPreview,
   prevStoryId,
   nextStoryId,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  categoryStories: _categoryStories,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  currentIndex: _currentIndex,
 }: Props) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
