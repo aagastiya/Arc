@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type CategoryStory = {
+type StorySlide = {
   id: string;
   clipUrl: string | null;
   coverUrl: string | null;
@@ -15,44 +15,19 @@ type CategoryStory = {
 };
 
 type Props = {
-  clipUrl: string | null;
-  coverUrl: string | null;
-  headline: string;
-  summaryPreview: string;
-  prevStoryId: string | null;
-  nextStoryId: string | null;
-  categoryStories: CategoryStory[];
+  allStories: StorySlide[];
   currentIndex: number;
-  nextCategoryFirstStoryId: string | null;
-  prevCategoryLastStoryId: string | null;
 };
 
-export function ClipPlayer({
-  clipUrl,
-  coverUrl,
-  headline,
-  summaryPreview,
-  prevStoryId,
-  nextStoryId,
-  categoryStories,
-  currentIndex,
-  nextCategoryFirstStoryId,
-  prevCategoryLastStoryId,
-}: Props) {
+export function ClipPlayer({ allStories, currentIndex }: Props) {
   const router = useRouter();
   const swipeContainerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const activeIndexRef = useRef(currentIndex);
-  const storiesRef = useRef<CategoryStory[]>([]);
+  const storiesRef = useRef<StorySlide[]>([]);
 
-  const stories = useMemo<CategoryStory[]>(
-    () =>
-      categoryStories.length > 0
-        ? categoryStories
-        : [{ id: "current", clipUrl, coverUrl, headline, summaryPreview }],
-    [categoryStories, clipUrl, coverUrl, headline, summaryPreview],
-  );
+  const stories = useMemo(() => allStories, [allStories]);
 
   const [activeIndex, setActiveIndex] = useState(currentIndex);
   const [coverHiddenByIndex, setCoverHiddenByIndex] = useState<Record<number, boolean>>({});
@@ -70,7 +45,7 @@ export function ClipPlayer({
 
   useEffect(() => {
     const story = stories[activeIndex];
-    if (story?.id && story.id !== "current") {
+    if (story?.id) {
       window.history.replaceState(null, "", `/today/${story.id}`);
     }
   }, [activeIndex, stories]);
@@ -140,9 +115,9 @@ export function ClipPlayer({
       const deltaX = touch.clientX - start.x;
       const deltaY = touch.clientY - start.y;
       const idx = activeIndexRef.current;
-      const categoryList = storiesRef.current;
-      const lastIdx = categoryList.length - 1;
-      console.log("touch end", { deltaX, deltaY, prevStoryId, nextStoryId, activeIndex: idx });
+      const storyList = storiesRef.current;
+      const lastIdx = storyList.length - 1;
+      console.log("touch end", { deltaX, deltaY, activeIndex: idx });
       const absX = Math.abs(deltaX);
       const absY = Math.abs(deltaY);
 
@@ -159,9 +134,6 @@ export function ClipPlayer({
         if (idx < lastIdx) {
           console.log("swipe left -> next");
           setActiveIndex(idx + 1);
-        } else if (nextCategoryFirstStoryId) {
-          console.log("swipe left -> next category", nextCategoryFirstStoryId);
-          router.push(`/today/${nextCategoryFirstStoryId}`);
         } else {
           console.log("swipe left -> informed");
           router.push("/today/informed");
@@ -172,9 +144,6 @@ export function ClipPlayer({
       if (idx > 0) {
         console.log("swipe right -> prev");
         setActiveIndex(idx - 1);
-      } else if (prevCategoryLastStoryId) {
-        console.log("swipe right -> prev category", prevCategoryLastStoryId);
-        router.push(`/today/${prevCategoryLastStoryId}`);
       }
     };
 
@@ -188,14 +157,7 @@ export function ClipPlayer({
       document.removeEventListener("touchstart", handleTouchStart, true);
       document.removeEventListener("touchend", handleTouchEnd, true);
     };
-  }, [
-    nextCategoryFirstStoryId,
-    nextStoryId,
-    prevCategoryLastStoryId,
-    prevStoryId,
-    router,
-    togglePlayback,
-  ]);
+  }, [router, togglePlayback]);
 
   return (
     <motion.div

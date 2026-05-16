@@ -89,52 +89,8 @@ export default async function TodayStoryPage({
   const { id } = await params;
   const [story, supabase] = await Promise.all([getLiveStoryById(id), createClient()]);
 
-  // ── swipe ordering: canonical category sequence ──────────────────────────
-  const { data: liveSwipeRows } = await supabase
-    .from("stories")
-    .select("id, category, published_at")
-    .eq("is_live", true)
-    .order("published_at", { ascending: false, nullsFirst: false });
-
-  type SwipeRow = { id: string; category: string; published_at: string | null };
-  const rows = (liveSwipeRows ?? []) as SwipeRow[];
-
-  const byBucket: Record<CanonicalCategory, SwipeRow[]> = {
-    World: [],
-    India: [],
-    Finance: [],
-    Tech: [],
-    Sports: [],
-    Local: [],
-  };
-
-  for (const row of rows) {
-    const bucket = normalizeStoryCategory(row.category);
-    if (bucket === "Other") {
-      continue;
-    }
-    byBucket[bucket].push(row);
-  }
-
-  const orderedStoryIds: string[] = [];
-  for (const name of CANONICAL_CATEGORY_ORDER) {
-    for (const r of byBucket[name]) {
-      orderedStoryIds.push(r.id);
-    }
-  }
-
-  const swipeIndex = orderedStoryIds.indexOf(id);
-  const prevStoryId = swipeIndex > 0 ? orderedStoryIds[swipeIndex - 1]! : null;
-  const nextStoryId =
-    swipeIndex >= 0 && swipeIndex < orderedStoryIds.length - 1
-      ? orderedStoryIds[swipeIndex + 1]!
-      : null;
-
-  // ── category stories: all live stories in the same canonical category ─────
-  // We fetch all live stories and filter in JS using normalizeStoryCategory so
-  // raw DB category strings ("economy", "tech", etc.) map correctly to buckets.
-  // TODO: can optimize by adding a normalized_category DB column and filtering in SQL.
-  type CategoryStoryRow = {
+  // ── unified slide rail: all live stories in canonical category order ───────
+  type LiveStoryRow = {
     id: string;
     clip_url: string | null;
     cover_image_url: string | null;
@@ -151,50 +107,47 @@ export default async function TodayStoryPage({
     .order("published_at", { ascending: false, nullsFirst: false })
     .limit(50);
 
-  const currentBucket = story ? normalizeStoryCategory(story.category) : "Other";
+  const rows = (allLiveStories ?? []) as LiveStoryRow[];
 
-  // First story (newest) in the next canonical category with live stories, or null at end of feed.
-  let nextCategoryFirstStoryId: string | null = null;
-  if (currentBucket !== "Other") {
-    const currentCatIndex = CANONICAL_CATEGORY_ORDER.indexOf(currentBucket);
-    for (let i = currentCatIndex + 1; i < CANONICAL_CATEGORY_ORDER.length; i++) {
-      const cat = CANONICAL_CATEGORY_ORDER[i]!;
-      const firstInCat = byBucket[cat][0]?.id ?? null;
-      if (firstInCat) {
-        nextCategoryFirstStoryId = firstInCat;
-        break;
-      }
+  const byBucket: Record<CanonicalCategory, LiveStoryRow[]> = {
+    World: [],
+    India: [],
+    Finance: [],
+    Tech: [],
+    Sports: [],
+    Local: [],
+  };
+
+  for (const row of rows) {
+    const bucket = normalizeStoryCategory(row.category);
+    if (bucket === "Other") {
+      continue;
+    }
+    byBucket[bucket].push(row);
+  }
+
+  const allStories: {
+    id: string;
+    clipUrl: string | null;
+    coverUrl: string | null;
+    headline: string;
+    summaryPreview: string;
+  }[] = [];
+
+  for (const name of CANONICAL_CATEGORY_ORDER) {
+    for (const r of byBucket[name]) {
+      allStories.push({
+        id: r.id,
+        clipUrl: r.clip_url,
+        coverUrl: r.cover_image_url,
+        headline: r.arc_headline,
+        summaryPreview: r.arc_summary,
+      });
     }
   }
 
-  // Last story (oldest) in the previous canonical category with live stories, or null at feed start.
-  let prevCategoryLastStoryId: string | null = null;
-  if (currentBucket !== "Other") {
-    const currentCatIndex = CANONICAL_CATEGORY_ORDER.indexOf(currentBucket);
-    for (let i = currentCatIndex - 1; i >= 0; i--) {
-      const cat = CANONICAL_CATEGORY_ORDER[i]!;
-      const bucketStories = byBucket[cat];
-      const lastInCat = bucketStories[bucketStories.length - 1]?.id ?? null;
-      if (lastInCat) {
-        prevCategoryLastStoryId = lastInCat;
-        break;
-      }
-    }
-  }
-
-  const categoryStories = ((allLiveStories ?? []) as CategoryStoryRow[])
-    .filter((s) => normalizeStoryCategory(s.category) === currentBucket)
-    .map((s) => ({
-      id: s.id,
-      clipUrl: s.clip_url,
-      coverUrl: s.cover_image_url,
-      headline: s.arc_headline,
-      summaryPreview: s.arc_summary,
-    }));
-
-  // Index of the current story within the category array.
-  // Falls back to 0 if the story somehow isn't in the list (shouldn't happen).
-  const categoryIndex = Math.max(0, categoryStories.findIndex((s) => s.id === id));
+  const orderedStoryIds = allStories.map((s) => s.id);
+  const globalIndex = Math.max(0, orderedStoryIds.indexOf(id));
 
   if (!story) {
     return (
@@ -246,18 +199,7 @@ export default async function TodayStoryPage({
         ) : null}
       </div>
 
-      <ClipPlayer
-        clipUrl={story.clip_url}
-        coverUrl={story.cover_image_url}
-        headline={story.arc_headline}
-        summaryPreview={story.arc_summary}
-        prevStoryId={prevStoryId}
-        nextStoryId={nextStoryId}
-        categoryStories={categoryStories}
-        currentIndex={categoryIndex}
-        nextCategoryFirstStoryId={nextCategoryFirstStoryId}
-        prevCategoryLastStoryId={prevCategoryLastStoryId}
-      />
+      <ClipPlayer allStories={allStories} currentIndex={globalIndex} />
 
       <div className="bg-[#0a0a0a] px-4 pb-3 pt-2">
         <InlineStoryline slug={storylineSlug} timelineItems={story.arc_storyline} />
