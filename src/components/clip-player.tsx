@@ -12,6 +12,7 @@ type StorySlide = {
   coverUrl: string | null;
   headline: string;
   summaryPreview: string;
+  category: string | null;
 };
 
 type Props = {
@@ -159,6 +160,8 @@ export function ClipPlayer({ allStories, currentIndex }: Props) {
     };
   }, [router, togglePlayback]);
 
+  const categoryLabel = stories[activeIndex]?.category;
+
   return (
     <motion.div
       ref={swipeContainerRef}
@@ -184,6 +187,26 @@ export function ClipPlayer({ allStories, currentIndex }: Props) {
           <path d="M15 18l-6-6 6-6" />
         </svg>
       </Link>
+
+      {categoryLabel ? (
+        <div
+          className="pointer-events-none absolute left-0 right-0 z-40 flex w-full items-center gap-2"
+          style={{ top: "12px", padding: "14px 16px 14px 56px" }}
+        >
+          <span
+            className="shrink-0 font-bold uppercase text-[#1a1a1a]"
+            style={{
+              background: "#c8ff00",
+              fontSize: "10px",
+              letterSpacing: "1px",
+              padding: "4px 10px",
+              borderRadius: "4px",
+            }}
+          >
+            {categoryLabel.toUpperCase()}
+          </span>
+        </div>
+      ) : null}
 
       <motion.div
         animate={{ x: `-${activeIndex * 100}vw` }}

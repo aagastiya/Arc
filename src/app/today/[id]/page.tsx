@@ -132,6 +132,7 @@ export default async function TodayStoryPage({
     coverUrl: string | null;
     headline: string;
     summaryPreview: string;
+    category: string | null;
   }[] = [];
 
   for (const name of CANONICAL_CATEGORY_ORDER) {
@@ -142,6 +143,7 @@ export default async function TodayStoryPage({
         coverUrl: r.cover_image_url,
         headline: r.arc_headline,
         summaryPreview: r.arc_summary,
+        category: name,
       });
     }
   }
@@ -162,31 +164,17 @@ export default async function TodayStoryPage({
     );
   }
 
-  const canonicalCategory = normalizeStoryCategory(story.category);
-  const categoryPill = canonicalCategory.toUpperCase();
   const storylineSlug = buildStorylineSlug(story.arc_headline, story.category);
 
   return (
     <main className="relative flex min-h-screen w-full flex-col bg-[#0a0a0a] text-zinc-100">
-      <div
-        className="absolute left-0 right-0 z-20 flex w-full items-center gap-2"
-        style={{ top: "12px", padding: "14px 16px" }}
-      >
-        <span
-          className="shrink-0 font-bold uppercase text-[#1a1a1a]"
-          style={{
-            background: "#c8ff00",
-            fontSize: "10px",
-            letterSpacing: "1px",
-            padding: "4px 10px",
-            borderRadius: "4px",
-          }}
+      {story.clip_url ? (
+        <div
+          className="absolute left-0 right-0 z-20 flex w-full items-center justify-end gap-2"
+          style={{ top: "12px", padding: "14px 16px" }}
         >
-          {categoryPill}
-        </span>
-        {story.clip_url ? (
           <span
-            className="ml-auto shrink-0 font-semibold text-white"
+            className="shrink-0 font-semibold text-white"
             style={{
               background: "rgba(0,0,0,0.5)",
               fontSize: "9px",
@@ -196,8 +184,8 @@ export default async function TodayStoryPage({
           >
             1:02
           </span>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       <ClipPlayer allStories={allStories} currentIndex={globalIndex} />
 
