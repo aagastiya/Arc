@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Sora, Syne } from "next/font/google";
 import "./globals.css";
 
@@ -27,6 +27,12 @@ const sora = Sora({
 export const metadata: Metadata = {
   title: "Arc",
   description: "Mobile-first news for young India.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

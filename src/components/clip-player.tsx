@@ -171,7 +171,7 @@ export function ClipPlayer({ allStories, currentIndex }: Props) {
       <Link
         href="/today"
         aria-label="Back to Today"
-        className="absolute left-4 top-4 z-50 inline-flex min-h-11 min-w-11 items-center justify-center p-2.5 text-zinc-300/70 transition-opacity hover:opacity-100 hover:text-zinc-100"
+        className="absolute left-4 top-[calc(env(safe-area-inset-top)+16px)] z-50 inline-flex min-h-11 min-w-11 items-center justify-center p-2.5 text-zinc-300/70 transition-opacity hover:opacity-100 hover:text-zinc-100"
       >
         <svg
           width="18"
@@ -190,8 +190,8 @@ export function ClipPlayer({ allStories, currentIndex }: Props) {
 
       {categoryLabel ? (
         <div
-          className="pointer-events-none absolute left-0 right-0 z-40 flex w-full items-center gap-2"
-          style={{ top: "12px", padding: "14px 16px 14px 56px" }}
+          className="pointer-events-none absolute left-0 right-0 top-[calc(env(safe-area-inset-top)+12px)] z-40 flex w-full items-center gap-2"
+          style={{ padding: "14px 16px 14px 56px" }}
         >
           <span
             className="shrink-0 font-bold uppercase text-[#1a1a1a]"
