@@ -33,6 +33,10 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
 };
 
 export default function RootLayout({
@@ -45,7 +49,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${syne.variable} ${sora.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col bg-black text-zinc-100">
+      <body className="flex min-h-full flex-col bg-[var(--background)] text-zinc-100">
         {children}
       </body>
     </html>
