@@ -1,7 +1,6 @@
 // Today feed structure: category nav → category sections only. No global hero. Every story belongs to exactly one category section.
 
-import { ArcWordmark } from "@/components/arc-wordmark";
-import { CategoryNav } from "@/components/category-nav";
+import { TodayFeedHeader } from "@/components/today-feed-header";
 import { SectionHeroCard } from "@/components/section-hero-card";
 import { SectionMiniCard } from "@/components/section-mini-card";
 import {
@@ -14,13 +13,6 @@ import {
 import { getLiveStories, type LiveStory } from "@/lib/stories";
 
 export const dynamic = "force-dynamic";
-
-function formatTopDate(date: Date): string {
-  const day = date.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
-  const dayOfMonth = date.toLocaleDateString("en-US", { day: "2-digit" });
-  const month = date.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
-  return `${day} ${dayOfMonth} ${month}`;
-}
 
 function groupStoriesByCategory(stories: LiveStory[]): Map<StoryCategoryBucket, LiveStory[]> {
   const map = new Map<StoryCategoryBucket, LiveStory[]>();
@@ -83,7 +75,6 @@ function CategoryFeedSection({
 
 export default async function TodayPage() {
   const stories = await getLiveStories();
-  const todayDate = formatTopDate(new Date());
 
   /** All live stories, bucketed once — sections read from this map only (no hero/rest split). */
   const grouped = groupStoriesByCategory(stories);
@@ -91,19 +82,7 @@ export default async function TodayPage() {
 
   return (
     <main className="min-h-screen bg-[#1a1a1a] text-zinc-100">
-      <header className="sticky top-0 z-20 border-b border-zinc-800 bg-[#1a1a1a]/95 px-6 py-5 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-6xl items-end justify-between">
-          <h1 className="leading-none">
-            <ArcWordmark size="md" />
-          </h1>
-          <div className="text-right">
-            <p className="text-sm text-zinc-400">Good morning</p>
-            <p className="text-[11px] tracking-[0.16em] text-zinc-500">{todayDate}</p>
-          </div>
-        </div>
-      </header>
-
-      {stories.length > 0 ? <CategoryNav /> : null}
+      <TodayFeedHeader showCategoryNav={stories.length > 0} />
 
       <section className="mx-auto w-full max-w-6xl px-6 py-6">
         {stories.length === 0 ? (
