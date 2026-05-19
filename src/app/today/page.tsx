@@ -81,7 +81,7 @@ export default async function TodayPage() {
   const otherStories = grouped.get("Other") ?? [];
 
   return (
-    <main className="min-h-screen bg-[#1a1a1a] text-zinc-100">
+    <main className="min-h-screen bg-[var(--background)] text-zinc-100">
       <TodayFeedHeader showCategoryNav={stories.length > 0} />
 
       <section className="mx-auto w-full max-w-6xl px-6 py-6">
