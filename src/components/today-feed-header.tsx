@@ -194,8 +194,11 @@ export function TodayFeedHeader({ showCategoryNav }: Props) {
 
   return (
     <header
-      className="sticky top-0 z-20 bg-[var(--background)]/95 backdrop-blur"
-      style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+      className="sticky top-0 z-20"
+      style={{
+        background: "var(--background)",
+        paddingTop: "env(safe-area-inset-top, 0px)",
+      }}
     >
       <div className="mx-auto w-full max-w-6xl px-6 pb-3 pt-3">
         <div className="flex items-center justify-between gap-3">
