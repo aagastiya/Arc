@@ -18,6 +18,11 @@ import {
 // Set NEXT_PUBLIC_OPENWEATHER_API_KEY in .env.local and Vercel env vars (openweathermap.org).
 const OPENWEATHER_API_KEY = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY;
 
+/** Natural height of the greeting-only row (text-sm line + spacing). */
+const GREETING_ROW_EXPANDED_PX = 40;
+/** Natural width for weather text e.g. "41° ☀️". */
+const WEATHER_EXPANDED_PX = 80;
+
 type WeatherState = {
   temp: number;
   icon: string;
@@ -56,10 +61,26 @@ export function TodayFeedHeader({ showCategoryNav }: Props) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const fadeOpacity = Math.max(0, Math.min(1, 1 - scrollY / 100));
-  const fadeStyle = {
+  const collapseProgress = Math.max(0, Math.min(1, scrollY / 100));
+  const fadeOpacity = 1 - collapseProgress;
+  const expanded = 1 - collapseProgress;
+
+  const weatherCollapseStyle = {
     opacity: fadeOpacity,
-    transition: "opacity 100ms ease-out",
+    maxWidth: `${expanded * WEATHER_EXPANDED_PX}px`,
+    overflow: "hidden" as const,
+    whiteSpace: "nowrap" as const,
+    transition: "opacity 100ms ease-out, max-width 100ms ease-out",
+    pointerEvents: (fadeOpacity === 0 ? "none" : "auto") as "none" | "auto",
+  };
+
+  const greetingRowCollapseStyle = {
+    maxHeight: `${expanded * GREETING_ROW_EXPANDED_PX}px`,
+    marginTop: `${expanded * 16}px`,
+    opacity: fadeOpacity,
+    overflow: "hidden" as const,
+    transition:
+      "max-height 100ms ease-out, margin-top 100ms ease-out, opacity 100ms ease-out",
     pointerEvents: (fadeOpacity === 0 ? "none" : "auto") as "none" | "auto",
   };
 
@@ -176,27 +197,27 @@ export function TodayFeedHeader({ showCategoryNav }: Props) {
       className="sticky top-0 z-20 bg-[var(--background)]/95 backdrop-blur"
       style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
     >
-      <div className="mx-auto w-full max-w-6xl px-6 pb-4 pt-3">
+      <div className="mx-auto w-full max-w-6xl px-6 pb-3 pt-3">
         <div className="flex items-center justify-between gap-3">
-          <h1 className="leading-none">
+          <h1 className="min-w-0 shrink-0 leading-none">
             <ArcWordmark size="md" />
           </h1>
-          <span
-            className="shrink-0 text-sm tabular-nums text-zinc-300"
-            aria-live="polite"
-            style={fadeStyle}
-          >
-            {weatherDisplay}
-          </span>
+          <div className="flex min-w-0 shrink-0 items-center gap-2">
+            <span
+              className="text-sm tabular-nums text-zinc-300"
+              aria-live="polite"
+              style={weatherCollapseStyle}
+            >
+              {weatherDisplay}
+            </span>
+            <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium tracking-[0.12em] text-zinc-300">
+              {datePill}
+            </span>
+          </div>
         </div>
 
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <p className="text-sm text-zinc-400" style={fadeStyle}>
-            {greetingLine}
-          </p>
-          <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium tracking-[0.12em] text-zinc-300">
-            {datePill}
-          </span>
+        <div style={greetingRowCollapseStyle}>
+          <p className="text-sm text-zinc-400">{greetingLine}</p>
         </div>
       </div>
 
