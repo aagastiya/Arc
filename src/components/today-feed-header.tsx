@@ -33,6 +33,7 @@ export function TodayFeedHeader({ showCategoryNav }: Props) {
   );
   const [weather, setWeather] = useState<WeatherState>(null);
   const [weatherLoading, setWeatherLoading] = useState(true);
+  const [scrollY, setScrollY] = useState(0);
 
   const greetingLine = useMemo(() => {
     // TODO: replace "Augy" with authenticated user's name when auth is shipped
@@ -47,6 +48,20 @@ export function TodayFeedHeader({ showCategoryNav }: Props) {
       block: "start",
     });
   }, []);
+
+  useEffect(() => {
+    const onScroll = () => setScrollY(window.scrollY);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const fadeOpacity = Math.max(0, Math.min(1, 1 - scrollY / 100));
+  const fadeStyle = {
+    opacity: fadeOpacity,
+    transition: "opacity 100ms ease-out",
+    pointerEvents: (fadeOpacity === 0 ? "none" : "auto") as "none" | "auto",
+  };
 
   useEffect(() => {
     if (!OPENWEATHER_API_KEY) {
@@ -166,13 +181,19 @@ export function TodayFeedHeader({ showCategoryNav }: Props) {
           <h1 className="leading-none">
             <ArcWordmark size="md" />
           </h1>
-          <span className="shrink-0 text-sm tabular-nums text-zinc-300" aria-live="polite">
+          <span
+            className="shrink-0 text-sm tabular-nums text-zinc-300"
+            aria-live="polite"
+            style={fadeStyle}
+          >
             {weatherDisplay}
           </span>
         </div>
 
         <div className="mt-4 flex items-center justify-between gap-3">
-          <p className="text-sm text-zinc-400">{greetingLine}</p>
+          <p className="text-sm text-zinc-400" style={fadeStyle}>
+            {greetingLine}
+          </p>
           <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium tracking-[0.12em] text-zinc-300">
             {datePill}
           </span>
