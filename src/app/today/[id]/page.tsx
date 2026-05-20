@@ -170,7 +170,7 @@ export default async function TodayStoryPage({
     <main className="relative flex min-h-screen w-full flex-col bg-[#0a0a0a] text-zinc-100">
       {story.clip_url ? (
         <div
-          className="absolute left-0 right-0 top-[calc(env(safe-area-inset-top)+12px)] z-20 flex w-full items-center justify-end gap-2"
+          className="absolute left-0 right-0 top-[calc(env(safe-area-inset-top)+12px)] z-50 flex w-full items-center justify-end gap-2"
           style={{ padding: "14px 16px" }}
         >
           <span

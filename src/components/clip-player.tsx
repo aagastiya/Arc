@@ -165,58 +165,20 @@ export function ClipPlayer({ allStories, currentIndex }: Props) {
   return (
     <motion.div
       ref={swipeContainerRef}
-      className="relative h-[100dvh] min-h-[100svh] w-full shrink-0 overflow-hidden bg-[#0a0a0a]"
+      className="relative h-[100dvh] min-h-[100svh] w-full shrink-0 overflow-hidden bg-black"
       style={{ touchAction: "pan-y", WebkitUserSelect: "none", userSelect: "none" }}
     >
-      <Link
-        href="/today"
-        aria-label="Back to Today"
-        className="absolute left-4 top-[calc(env(safe-area-inset-top)+16px)] z-50 inline-flex min-h-11 min-w-11 items-center justify-center p-2.5 text-zinc-300/70 transition-opacity hover:opacity-100 hover:text-zinc-100"
-      >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden
-        >
-          <path d="M15 18l-6-6 6-6" />
-        </svg>
-      </Link>
-
-      {categoryLabel ? (
-        <div
-          className="pointer-events-none absolute left-0 right-0 top-[calc(env(safe-area-inset-top)+12px)] z-40 flex w-full items-center gap-2"
-          style={{ padding: "14px 16px 14px 56px" }}
-        >
-          <span
-            className="shrink-0 font-bold uppercase text-[#1a1a1a]"
-            style={{
-              background: "#c8ff00",
-              fontSize: "10px",
-              letterSpacing: "1px",
-              padding: "4px 10px",
-              borderRadius: "4px",
-            }}
-          >
-            {categoryLabel.toUpperCase()}
-          </span>
-        </div>
-      ) : null}
-
+      {/* Rail first: media is edge-to-edge from y=0 (behind Dynamic Island) */}
       <motion.div
         animate={{ x: `-${activeIndex * 100}vw` }}
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
-        style={{ display: "flex", height: "100%" }}
+        className="absolute inset-0 flex"
       >
         {stories.map((story, idx) => (
           <div
             key={story.id}
-            style={{ width: "100vw", height: "100%", flexShrink: 0, position: "relative" }}
+            className="relative h-full min-h-[100dvh] shrink-0"
+            style={{ width: "100vw", flexShrink: 0 }}
           >
             {story.clipUrl ? (
               <>
@@ -245,7 +207,7 @@ export function ClipPlayer({ allStories, currentIndex }: Props) {
                 </video>
                 {story.coverUrl ? (
                   <div
-                    className="pointer-events-none absolute inset-0 z-10 transition-opacity duration-200 ease-out"
+                    className="pointer-events-none absolute inset-0 z-[5] transition-opacity duration-200 ease-out"
                     style={{ opacity: coverHiddenByIndex[idx] ? 0 : 1 }}
                     aria-hidden
                   >
@@ -262,7 +224,7 @@ export function ClipPlayer({ allStories, currentIndex }: Props) {
                 ) : null}
               </>
             ) : story.coverUrl ? (
-              <div className="absolute inset-0">
+              <div className="absolute inset-0 z-0">
                 <Image
                   src={story.coverUrl}
                   alt={story.headline}
@@ -274,7 +236,7 @@ export function ClipPlayer({ allStories, currentIndex }: Props) {
               </div>
             ) : (
               <div
-                className="absolute inset-0"
+                className="absolute inset-0 z-0"
                 style={{
                   background: "linear-gradient(160deg, #1a1a1a 0%, #0a0a0a 100%)",
                 }}
@@ -292,6 +254,55 @@ export function ClipPlayer({ allStories, currentIndex }: Props) {
           </div>
         ))}
       </motion.div>
+
+      {/* Status bar / controls readability over bright frames */}
+      <div
+        className="pointer-events-none absolute left-0 right-0 top-0 z-10 h-[120px]"
+        style={{
+          background: "linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 100%)",
+        }}
+        aria-hidden
+      />
+
+      <Link
+        href="/today"
+        aria-label="Back to Today"
+        className="absolute left-4 top-[calc(env(safe-area-inset-top)+12px)] z-50 inline-flex min-h-11 min-w-11 items-center justify-center p-2.5 text-zinc-300/70 transition-opacity hover:opacity-100 hover:text-zinc-100"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <path d="M15 18l-6-6 6-6" />
+        </svg>
+      </Link>
+
+      {categoryLabel ? (
+        <div
+          className="pointer-events-none absolute left-0 right-0 top-[calc(env(safe-area-inset-top)+12px)] z-50 flex w-full items-center gap-2"
+          style={{ padding: "14px 16px 14px 56px" }}
+        >
+          <span
+            className="shrink-0 font-bold uppercase text-[#1a1a1a]"
+            style={{
+              background: "#c8ff00",
+              fontSize: "10px",
+              letterSpacing: "1px",
+              padding: "4px 10px",
+              borderRadius: "4px",
+            }}
+          >
+            {categoryLabel.toUpperCase()}
+          </span>
+        </div>
+      ) : null}
     </motion.div>
   );
 }
