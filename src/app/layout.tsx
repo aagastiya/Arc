@@ -27,6 +27,11 @@ const sora = Sora({
 export const metadata: Metadata = {
   title: "Arc",
   description: "Mobile-first news for young India.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Arc",
+  },
 };
 
 export const viewport: Viewport = {
