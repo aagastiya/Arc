@@ -185,7 +185,7 @@ export function AdminSearchList({ articles, storiesByArticleId }: Props) {
               <th className="px-4 py-3 text-right">Action</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-800 bg-[#0f0f0f]">
+          <tbody className="divide-y divide-zinc-800 bg-[var(--card)]">
             {showSearchingRow ? (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-sm text-zinc-500">

@@ -175,7 +175,7 @@ export default async function StorylinePage({ params }: StorylinePageProps) {
   const data = fromSlug(slug);
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] px-5 pb-12 pt-6 text-zinc-100">
+    <main className="min-h-screen bg-[var(--background)] px-5 pb-12 pt-6 text-zinc-100">
       <div className="mx-auto w-full max-w-2xl">
         <Link href="/today" className="inline-block text-sm text-zinc-400 hover:text-zinc-200">
           ← Back

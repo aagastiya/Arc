@@ -29,7 +29,7 @@ export function SectionHeroCard({ story, categoryLabel }: Props) {
         <div
           className="absolute inset-0"
           style={{
-            background: "linear-gradient(160deg, #1a1a1a 0%, #0a0a0a 100%)",
+            background: "linear-gradient(160deg, var(--elevated) 0%, var(--background) 100%)",
           }}
         />
       )}
@@ -44,7 +44,7 @@ export function SectionHeroCard({ story, categoryLabel }: Props) {
 
       <div className="absolute left-3 right-3 top-3 z-10 flex items-start justify-between gap-2">
         <span
-          className="shrink-0 font-bold uppercase text-[#1a1a1a]"
+          className="shrink-0 font-bold uppercase text-[#141414]"
           style={{
             background: "#c8ff00",
             fontSize: "10px",

@@ -153,7 +153,7 @@ export default async function TodayStoryPage({
 
   if (!story) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#0a0a0a] px-6 text-zinc-100">
+      <main className="flex min-h-screen items-center justify-center bg-[var(--background)] px-6 text-zinc-100">
         <div className="text-center">
           <p className="text-lg text-zinc-200">Story not found.</p>
           <Link href="/today" className="mt-3 inline-block text-sm text-[#c8ff00] hover:underline">
@@ -167,7 +167,7 @@ export default async function TodayStoryPage({
   const storylineSlug = buildStorylineSlug(story.arc_headline, story.category);
 
   return (
-    <main className="relative flex min-h-screen w-full flex-col bg-[#0a0a0a] text-zinc-100">
+    <main className="relative flex min-h-screen w-full flex-col bg-[var(--background)] text-zinc-100">
       {story.clip_url ? (
         <div
           className="absolute left-0 right-0 top-[calc(env(safe-area-inset-top)+12px)] z-50 flex w-full items-center justify-end gap-2"
@@ -189,7 +189,7 @@ export default async function TodayStoryPage({
 
       <ClipPlayer allStories={allStories} currentIndex={globalIndex} />
 
-      <div className="bg-[#0a0a0a] px-4 pb-3 pt-2">
+      <div className="bg-[var(--background)] px-4 pb-3 pt-2">
         <InlineStoryline slug={storylineSlug} timelineItems={story.arc_storyline} />
       </div>
 

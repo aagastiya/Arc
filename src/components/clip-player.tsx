@@ -165,7 +165,7 @@ export function ClipPlayer({ allStories, currentIndex }: Props) {
   return (
     <motion.div
       ref={swipeContainerRef}
-      className="relative h-[100dvh] min-h-[100svh] w-full shrink-0 overflow-hidden bg-black"
+      className="relative h-[100dvh] min-h-[100svh] w-full shrink-0 overflow-hidden bg-[var(--background)]"
       style={{ touchAction: "pan-y", WebkitUserSelect: "none", userSelect: "none" }}
     >
       {/* Rail first: media is edge-to-edge from y=0 (behind Dynamic Island) */}
@@ -238,7 +238,7 @@ export function ClipPlayer({ allStories, currentIndex }: Props) {
               <div
                 className="absolute inset-0 z-0"
                 style={{
-                  background: "linear-gradient(160deg, #1a1a1a 0%, #0a0a0a 100%)",
+                  background: "linear-gradient(160deg, var(--elevated) 0%, var(--background) 100%)",
                 }}
               />
             )}
@@ -290,7 +290,7 @@ export function ClipPlayer({ allStories, currentIndex }: Props) {
           style={{ padding: "14px 16px 14px 56px" }}
         >
           <span
-            className="shrink-0 font-bold uppercase text-[#1a1a1a]"
+            className="shrink-0 font-bold uppercase text-[#141414]"
             style={{
               background: "#c8ff00",
               fontSize: "10px",

@@ -51,7 +51,7 @@ export default async function AdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] px-6 py-10 text-zinc-100 md:px-10">
+    <main className="min-h-screen bg-[var(--background)] px-6 py-10 text-zinc-100 md:px-10">
       <div className="mx-auto w-full max-w-6xl">
         <h1 className="text-3xl font-semibold tracking-tight text-[#c8ff00]">Arc Editor</h1>
         <p className="mt-1 text-sm text-zinc-400">Articles → Arc drafts</p>

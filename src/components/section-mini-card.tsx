@@ -29,7 +29,7 @@ export function SectionMiniCard({ story, categoryLabel }: Props) {
         <div
           className="absolute inset-0"
           style={{
-            background: "linear-gradient(160deg, #1a1a1a 0%, #0a0a0a 100%)",
+            background: "linear-gradient(160deg, var(--elevated) 0%, var(--background) 100%)",
           }}
         />
       )}
@@ -43,7 +43,7 @@ export function SectionMiniCard({ story, categoryLabel }: Props) {
       />
 
       <span
-        className="absolute left-2 top-2 z-10 font-bold uppercase text-[#1a1a1a]"
+        className="absolute left-2 top-2 z-10 font-bold uppercase text-[#141414]"
         style={{
           background: "#c8ff00",
           fontSize: "8px",

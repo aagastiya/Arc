@@ -47,7 +47,7 @@ export default async function StoryEditorPage({
 
     if (storyError || !story) {
       return (
-        <main className="min-h-screen bg-[#0a0a0a] px-6 py-10 text-zinc-100 md:px-10">
+        <main className="min-h-screen bg-[var(--background)] px-6 py-10 text-zinc-100 md:px-10">
           <div className="mx-auto max-w-4xl">
             <p className="text-lg text-zinc-200">Story not found.</p>
             <Link href="/admin" className="mt-3 inline-block text-sm text-[#c8ff00] hover:underline">
@@ -82,14 +82,14 @@ export default async function StoryEditorPage({
           : null;
 
     return (
-      <main className="min-h-screen bg-[#0a0a0a] px-6 py-10 text-zinc-100 md:px-10">
+      <main className="min-h-screen bg-[var(--background)] px-6 py-10 text-zinc-100 md:px-10">
         <div className="mx-auto w-full max-w-7xl">
           <Link href="/admin" className="text-sm text-[#c8ff00] hover:underline">
             Back to /admin
           </Link>
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
-            <section className="rounded-lg border border-zinc-800 bg-[#0f0f0f] p-5">
+            <section className="rounded-lg border border-zinc-800 bg-[var(--card)] p-5">
               <h2 className="text-xl font-semibold text-zinc-100">Original article</h2>
               <p className="mt-3 text-lg leading-6 text-zinc-100">{article.title}</p>
               <p className="mt-2 text-sm text-zinc-400">
@@ -112,7 +112,7 @@ export default async function StoryEditorPage({
               </a>
             </section>
 
-            <section className="rounded-lg border border-zinc-800 bg-[#0f0f0f] p-5">
+            <section className="rounded-lg border border-zinc-800 bg-[var(--card)] p-5">
               <h2 className="text-xl font-semibold text-zinc-100">Arc draft</h2>
               <p className="mt-1 text-sm text-zinc-400">
                 Category: {story.category ?? "uncategorized"}
@@ -142,8 +142,8 @@ export default async function StoryEditorPage({
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return (
-      <main className="min-h-screen bg-[#0a0a0a] px-6 py-10 text-zinc-100 md:px-10">
-        <div className="mx-auto max-w-4xl rounded-lg border border-zinc-800 bg-[#0f0f0f] p-5">
+      <main className="min-h-screen bg-[var(--background)] px-6 py-10 text-zinc-100 md:px-10">
+        <div className="mx-auto max-w-4xl rounded-lg border border-zinc-800 bg-[var(--card)] p-5">
           <p className="text-lg text-zinc-100">Failed to load story editor.</p>
           <p className="mt-2 text-sm text-zinc-400">{message}</p>
           <Link href="/admin" className="mt-4 inline-block text-sm text-[#c8ff00] hover:underline">
