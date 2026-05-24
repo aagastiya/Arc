@@ -34,7 +34,6 @@ export const metadata: Metadata = {
   },
   other: {
     "apple-mobile-web-app-capable": "yes",
-    "apple-touch-startup-image": "/arc-splash.png",
   },
 };
 
@@ -58,6 +57,13 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${syne.variable} ${sora.variable} h-full antialiased`}
     >
+      <head>
+        <link
+          rel="apple-touch-startup-image"
+          media="screen and (device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3)"
+          href="/arc-splash.png"
+        />
+      </head>
       <body className="flex min-h-full flex-col bg-[var(--background)] text-zinc-100">
         {children}
       </body>
