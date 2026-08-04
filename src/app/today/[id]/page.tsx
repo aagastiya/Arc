@@ -12,60 +12,6 @@ import { getLiveStoryById } from "@/lib/stories";
 
 export const dynamic = "force-dynamic";
 
-function slugifyHeadline(value: string): string {
-  const slug = value
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, " ")
-    .trim()
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .slice(0, 72);
-  return slug || "storyline";
-}
-
-function buildStorylineSlug(headline: string, category: string): string {
-  const h = headline.toLowerCase();
-  const c = category.toLowerCase();
-
-  if (
-    h.includes("iran") ||
-    h.includes("israel") ||
-    h.includes("gaza") ||
-    h.includes("tehran")
-  ) {
-    return "iran-us-israel-tensions";
-  }
-  if (
-    h.includes("ipl") ||
-    h.includes("cricket") ||
-    h.includes("bcci") ||
-    h.includes("t20")
-  ) {
-    return "ipl-2026";
-  }
-  if (
-    h.includes("openai") ||
-    h.includes("chatgpt") ||
-    h.includes("google ai") ||
-    h.includes("gemini") ||
-    h.includes("anthropic")
-  ) {
-    return "openai-google-ai-race";
-  }
-
-  if (c === "sports") {
-    return "sports-season-watch";
-  }
-  if (c === "tech") {
-    return "global-ai-platform-shift";
-  }
-  if (c === "finance") {
-    return "global-market-volatility-watch";
-  }
-
-  return slugifyHeadline(headline);
-}
-
 function formatPublishedDate(iso: string | null): string {
   if (!iso) {
     return "Unknown date";
@@ -164,8 +110,6 @@ export default async function TodayStoryPage({
     );
   }
 
-  const storylineSlug = buildStorylineSlug(story.arc_headline, story.category);
-
   return (
     <main className="relative flex min-h-screen w-full flex-col bg-[var(--background)] text-zinc-100">
       {story.clip_url ? (
@@ -190,7 +134,15 @@ export default async function TodayStoryPage({
       <ClipPlayer allStories={allStories} currentIndex={globalIndex} />
 
       <div className="bg-[var(--background)] px-4 pb-3 pt-2">
-        <InlineStoryline slug={storylineSlug} timelineItems={story.arc_storyline} />
+        <InlineStoryline
+          headline={story.arc_headline}
+          summary={story.arc_summary}
+          category={story.category}
+          coverImageUrl={story.cover_image_url}
+          keyPoints={story.arc_key_points}
+          report={story.arc_report}
+          storyline={story.arc_storyline}
+        />
       </div>
 
       <footer

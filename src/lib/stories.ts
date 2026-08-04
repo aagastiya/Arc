@@ -1,10 +1,27 @@
 import { createClient } from "@/lib/supabase/server";
 
+export type LiveStoryKeyPoint = {
+  text: string;
+  source: string;
+};
+
+export type LiveStoryReportSection = {
+  title: string;
+  body: string;
+};
+
+export type LiveStoryReport = {
+  lead: string;
+  sections: LiveStoryReportSection[];
+};
+
 export type LiveStory = {
   id: string;
   arc_headline: string;
   arc_summary: string;
   arc_storyline: Array<{ date: string; event: string }>;
+  arc_key_points: LiveStoryKeyPoint[];
+  arc_report: LiveStoryReport | null;
   clip_url: string | null;
   cover_image_url: string | null;
   category: string;
@@ -20,6 +37,8 @@ type StoryRow = {
   arc_headline: string;
   arc_summary: string;
   arc_storyline: unknown;
+  arc_key_points: unknown;
+  arc_report: unknown;
   clip_url: string | null;
   cover_image_url: string | null;
   category: string;
@@ -55,6 +74,50 @@ function parseStoryline(value: unknown): Array<{ date: string; event: string }> 
     });
 }
 
+function parseKeyPoints(value: unknown): LiveStoryKeyPoint[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const points: LiveStoryKeyPoint[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const entry = item as Record<string, unknown>;
+    if (typeof entry.text !== "string" || typeof entry.source !== "string") {
+      continue;
+    }
+    points.push({ text: entry.text, source: entry.source });
+  }
+  return points;
+}
+
+function parseReport(value: unknown): LiveStoryReport | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const report = value as Record<string, unknown>;
+  if (typeof report.lead !== "string" || !Array.isArray(report.sections)) {
+    return null;
+  }
+
+  const sections: LiveStoryReportSection[] = [];
+  for (const item of report.sections) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const entry = item as Record<string, unknown>;
+    if (typeof entry.title !== "string" || typeof entry.body !== "string") {
+      continue;
+    }
+    sections.push({ title: entry.title, body: entry.body });
+  }
+
+  return { lead: report.lead, sections };
+}
+
 function getArticle(row: StoryRow): {
   title: string;
   link: string;
@@ -82,6 +145,8 @@ function toLiveStory(row: StoryRow): LiveStory {
     arc_headline: row.arc_headline,
     arc_summary: row.arc_summary,
     arc_storyline: parseStoryline(row.arc_storyline),
+    arc_key_points: parseKeyPoints(row.arc_key_points),
+    arc_report: parseReport(row.arc_report),
     clip_url: row.clip_url,
     cover_image_url: row.cover_image_url,
     category: row.category,
@@ -93,14 +158,15 @@ function toLiveStory(row: StoryRow): LiveStory {
   };
 }
 
+const STORY_SELECT =
+  "id,arc_headline,arc_summary,arc_storyline,arc_key_points,arc_report,clip_url,cover_image_url,category,is_section_hero,published_at,articles!stories_article_id_fkey(title,link,feeds(source_name))";
+
 export async function getLiveStories(): Promise<LiveStory[]> {
   try {
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("stories")
-      .select(
-        "id,arc_headline,arc_summary,arc_storyline,clip_url,cover_image_url,category,is_section_hero,published_at,articles(title,link,feeds(source_name))",
-      )
+      .select(STORY_SELECT)
       .eq("is_live", true)
       .order("published_at", { ascending: false, nullsFirst: false })
       .limit(50);
@@ -125,9 +191,7 @@ export async function getLiveStoryById(id: string): Promise<LiveStory | null> {
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("stories")
-      .select(
-        "id,arc_headline,arc_summary,arc_storyline,clip_url,cover_image_url,category,is_section_hero,published_at,articles(title,link,feeds(source_name))",
-      )
+      .select(STORY_SELECT)
       .eq("id", id)
       .eq("is_live", true)
       .maybeSingle();

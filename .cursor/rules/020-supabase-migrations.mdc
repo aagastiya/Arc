@@ -1,0 +1,27 @@
+---
+description: Arc Supabase/Postgres migration conventions — uuid PKs, RLS, indexes, naming
+globs: ["supabase/migrations/**/*.sql"]
+alwaysApply: false
+---
+
+# Arc Supabase migration conventions
+
+Match the existing `*_arc_stories.sql` pattern.
+
+- File name: `YYYYMMDDHHMMSS_short_description.sql`. Start with a comment explaining the object and its relation to existing tables.
+- Every table:
+  - `id uuid primary key default gen_random_uuid()`
+  - FKs reference `public.<table> (id)` with explicit `on delete`.
+  - `created_at timestamptz not null default now()`; add `updated_at` if mutable.
+  - Sensible `not null default`s on flags; `unique (...)` where duplicates are impossible.
+- Indexes on every column the app filters/sorts by (e.g. `published_at desc nulls last`, `category`, `is_live`).
+- ALWAYS enable RLS and add explicit policies:
+```sql
+  alter table public.<t> enable row level security;
+  create policy "Anyone can read live rows"
+    on public.<t> for select
+    to anon, authenticated
+    using (is_live = true);
+```
+- Public read limited to published rows (`is_live = true`). Writes happen server-side via the service-role key (bypasses RLS) — do NOT add anon write policies unless a real user action needs it.
+- NEVER disable RLS to "make it work." NEVER hand-edit an applied migration — write a new one.

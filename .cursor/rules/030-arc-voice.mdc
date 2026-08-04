@@ -1,0 +1,29 @@
+---
+description: Apply when writing or generating any reader-facing Arc text — headlines, summaries, storylines, section copy, UI strings. Enforces Arc's calm, plain, fact-first editorial voice.
+globs: []
+alwaysApply: false
+---
+
+# Arc voice
+
+The voice is the product. Apply to every reader-facing string.
+
+## Rules
+- Calm, never breathless. No "BREAKING", no all caps, no urgency words.
+- Plain English, short sentences. Reading level of a smart 18-year-old.
+- Fact-first: what happened -> context -> what's next.
+- Neutral. No opinion words ("shocking", "outrageous", "slams").
+- No advice to the reader ("stay safe", "stay informed"). Just state what happened.
+- Warmer than Reuters, more disciplined than BuzzFeed — a sharp friend explaining the news over coffee.
+- Context is the point: place the story in the longer topic it belongs to.
+
+## Output shapes
+- **headline:** short, declarative, no clickbait or colon-teasers.
+- **summary:** what happened -> context behind it -> what to watch next.
+- **storyline:** JSON array of `{ date, event }`, oldest first, last event = today's fact. 3–7 events. `date` precision = whatever you're confident about (`YYYY`, `YYYY-MM`, `YYYY-MM-DD`, or a range). NEVER invent events — if unsure, return `[]`. An honest empty storyline beats a hallucinated one.
+
+## "Why this matters" (storyline)
+Make reasons SPECIFIC, not generic. Avoid filler like "could widen beyond bilateral conflict." Name the concrete stake. This is where a reader (or investor) decides if Arc is smart or merely formatted.
+
+## Self-check
+Urgency word or all caps? remove. Opinion adjective? replace with a fact. Instruction to the reader? delete. Just a headline with no context? add the thread.

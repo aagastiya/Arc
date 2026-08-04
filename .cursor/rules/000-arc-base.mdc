@@ -1,0 +1,25 @@
+---
+description: Arc project context — what it is, stack, and design tokens
+alwaysApply: true
+---
+
+# Arc — project base
+
+Arc is a mobile-first, clip-based news app that puts every story in its **context, calmly**. Global/US audience (young, English-speaking). The unit is a **clip**, not an article. Arc is a **curated publication, not a UGC platform**. What we're building now is a polished **investor-demo**: polish beats breadth, no visible rough edges.
+
+## Stack (pin versions when generating)
+- Next.js (App Router) + TypeScript
+- Supabase (Postgres + Storage + RLS) — service-role key server-side ONLY
+- OpenAI `gpt-4o-mini`, `temperature: 0.4`, `response_format: json_object`
+- Tailwind, dark-mode first · deployed on Vercel
+
+## Design tokens (non-negotiable)
+- Accent: `#c8ff00` (lime). Canvas near-black `#0d0d0d`–`#141414`.
+- Wordmark `Arc.` — the period is a glowing lime cube; also a small lime square in the header.
+- Section rules: short lime dash + uppercase label ("— WORLD").
+- No oversized text. Clean, editorial, high-contrast, calm.
+
+## Always
+- Default to Server Components; add `"use client"` only for interactivity/hooks.
+- Never expose the Supabase service-role key client-side.
+- Any reader-facing text follows the Arc voice rule (030-arc-voice.mdc).

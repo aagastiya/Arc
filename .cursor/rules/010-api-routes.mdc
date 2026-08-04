@@ -1,0 +1,25 @@
+---
+description: Arc Next.js API route conventions — error shape, env checks, Supabase, OpenAI
+globs: ["src/app/api/**/route.ts", "src/app/api/**/route.tsx"]
+alwaysApply: false
+---
+
+# Arc API route conventions
+
+Match the existing routes (`generate`, `test-summarize`, `upload`, `stories/[id]`).
+
+- ALWAYS wrap the handler in `try/catch`. On unknown error:
+```ts
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: "Unexpected failure", details: message }, { status: 500 });
+  }
+```
+- Error responses ALWAYS use `{ error: string, details?: string }` with an explicit status. Never throw raw.
+- Validate inputs early, return 400 with a helpful message.
+- Check env vars before use; return 500 if missing (`NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`).
+- Supabase server-side ONLY via `createClient(url, SUPABASE_SERVICE_ROLE_KEY)`. NEVER ship the service-role key to the client.
+- Read query params via `new URL(request.url).searchParams`.
+- OpenAI: `gpt-4o-mini`, `temperature: 0.4`, `response_format: { type: "json_object" }`. Parse in `try/catch`; on parse failure return 500 with the `raw` content.
+- Reader-facing generated text follows 030-arc-voice.mdc.
+- Success: `return NextResponse.json(payload)`. Never return HTML or plain strings.

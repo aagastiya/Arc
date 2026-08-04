@@ -1,4 +1,5 @@
 import { AdminSearchList } from "@/components/admin-search-list";
+import { SyncNewsButton } from "@/components/sync-news-button";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -53,8 +54,15 @@ export default async function AdminPage() {
   return (
     <main className="min-h-screen bg-[var(--background)] px-6 py-10 text-zinc-100 md:px-10">
       <div className="mx-auto w-full max-w-6xl">
-        <h1 className="text-3xl font-semibold tracking-tight text-[#c8ff00]">Arc Editor</h1>
-        <p className="mt-1 text-sm text-zinc-400">Articles → Arc drafts</p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight text-[#c8ff00]">
+              Arc Editor
+            </h1>
+            <p className="mt-1 text-sm text-zinc-400">Articles → Arc drafts</p>
+          </div>
+          <SyncNewsButton />
+        </div>
 
         <div className="mt-8">
           <AdminSearchList articles={articleRows} storiesByArticleId={storiesByArticleId} />
