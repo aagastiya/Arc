@@ -58,18 +58,24 @@ export function AdminSearchList({ articles, storiesByArticleId }: Props) {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [loadingByArticleId, setLoadingByArticleId] = useState<Record<string, boolean>>({});
   const [errorByArticleId, setErrorByArticleId] = useState<Record<string, string | null>>({});
+  const [thinWarningByArticleId, setThinWarningByArticleId] = useState<
+    Record<string, string | null>
+  >({});
 
   const handleGenerateClick = async (articleId: string) => {
     setLoadingByArticleId((prev) => ({ ...prev, [articleId]: true }));
     setErrorByArticleId((prev) => ({ ...prev, [articleId]: null }));
+    setThinWarningByArticleId((prev) => ({ ...prev, [articleId]: null }));
 
     try {
       const res = await fetch(`/api/arc/generate?id=${encodeURIComponent(articleId)}`, {
         method: "POST",
+        credentials: "same-origin",
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         saved_story?: { id?: string };
+        source_quality?: Array<{ quality: string; text_length?: number }>;
       };
 
       if (!res.ok) {
@@ -78,8 +84,22 @@ export function AdminSearchList({ articles, storiesByArticleId }: Props) {
         );
       }
 
+      const qualities = data.source_quality ?? [];
+      const allThin =
+        qualities.length > 0 && qualities.every((q) => q.quality === "thin");
+      if (allThin) {
+        setThinWarningByArticleId((prev) => ({
+          ...prev,
+          [articleId]: "Source text is thin — story will be short.",
+        }));
+      }
+
       const savedStoryId = data.saved_story?.id;
       if (savedStoryId) {
+        // Brief pause so the thin warning is visible before navigation
+        if (allThin) {
+          await new Promise((r) => setTimeout(r, 900));
+        }
         router.push(`/admin/${savedStoryId}`);
         return;
       }
@@ -247,6 +267,11 @@ export function AdminSearchList({ articles, storiesByArticleId }: Props) {
                               ? "Regenerate"
                               : "Generate Arc voice"}
                         </button>
+                        {thinWarningByArticleId[article.id] ? (
+                          <p className="max-w-[14rem] text-right text-xs text-amber-400">
+                            {thinWarningByArticleId[article.id]}
+                          </p>
+                        ) : null}
                         {errorByArticleId[article.id] ? (
                           <p className="text-xs text-red-400">{errorByArticleId[article.id]}</p>
                         ) : null}

@@ -4,6 +4,7 @@ import { formatRelativeTime } from "@/lib/time";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { EditForm } from "./edit-form";
+import { AdminGraphPanel } from "./graph-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -136,6 +137,8 @@ export default async function StoryEditorPage({
               </div>
             </section>
           </div>
+
+          <AdminGraphPanel storyId={story.id} />
         </div>
       </main>
     );

@@ -34,6 +34,9 @@ function requiresAdminBasicAuth(pathname: string): boolean {
   if (pathname === "/admin" || pathname.startsWith("/admin/")) {
     return true;
   }
+  if (pathname === "/api/admin" || pathname.startsWith("/api/admin/")) {
+    return true;
+  }
   return pathname === "/api/arc" || pathname.startsWith("/api/arc/");
 }
 

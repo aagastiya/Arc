@@ -13,18 +13,46 @@ const parser = new Parser({
   },
 });
 
+export type SyncFeedCount = {
+  sourceName: string;
+  url: string;
+  articleUpserts: number;
+  liveblogSkipped: number;
+};
+
 export type SyncResult = {
   feedsAttempted: number;
   articleUpserts: number;
+  liveblogSkipped: number;
   errors: string[];
+  perFeed: SyncFeedCount[];
 };
+
+/** Skip Guardian-style liveblogs and similar rolling coverage. */
+export function isLiveblogItem(link: string, title: string): boolean {
+  if (/\/live\//i.test(link)) {
+    return true;
+  }
+  const t = title.toLowerCase();
+  if (t.includes("– live") || t.includes("— live") || t.includes("- live")) {
+    return true;
+  }
+  if (/\blive updates\b/i.test(title)) {
+    return true;
+  }
+  return false;
+}
 
 export async function syncAllRssFeeds(): Promise<SyncResult> {
   const admin = createAdminClient();
   const errors: string[] = [];
+  const perFeed: SyncFeedCount[] = [];
   let articleUpserts = 0;
+  let liveblogSkipped = 0;
 
   for (const def of DEFAULT_FEEDS) {
+    let feedUpserts = 0;
+    let feedLiveblogSkipped = 0;
     try {
       const { data: feedRow, error: feedErr } = await admin
         .from("feeds")
@@ -42,6 +70,12 @@ export async function syncAllRssFeeds(): Promise<SyncResult> {
 
       if (feedErr || !feedRow) {
         errors.push(`${def.url}: ${feedErr?.message ?? "feed upsert failed"}`);
+        perFeed.push({
+          sourceName: def.sourceName,
+          url: def.url,
+          articleUpserts: 0,
+          liveblogSkipped: 0,
+        });
         continue;
       }
 
@@ -49,6 +83,15 @@ export async function syncAllRssFeeds(): Promise<SyncResult> {
 
       for (const item of parsed.items) {
         if (!item.link?.trim() || !item.title?.trim()) {
+          continue;
+        }
+
+        const link = item.link.trim();
+        const title = item.title.trim();
+
+        if (isLiveblogItem(link, title)) {
+          feedLiveblogSkipped += 1;
+          liveblogSkipped += 1;
           continue;
         }
 
@@ -65,8 +108,8 @@ export async function syncAllRssFeeds(): Promise<SyncResult> {
           {
             feed_id: feedRow.id,
             item_guid: guid,
-            link: item.link.trim(),
-            title: item.title.trim(),
+            link,
+            title,
             summary,
             image_url: imageUrl,
             author:
@@ -82,8 +125,9 @@ export async function syncAllRssFeeds(): Promise<SyncResult> {
         );
 
         if (artErr) {
-          errors.push(`${item.link}: ${artErr.message}`);
+          errors.push(`${link}: ${artErr.message}`);
         } else {
+          feedUpserts += 1;
           articleUpserts += 1;
         }
       }
@@ -92,11 +136,20 @@ export async function syncAllRssFeeds(): Promise<SyncResult> {
         `${def.url}: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
+
+    perFeed.push({
+      sourceName: def.sourceName,
+      url: def.url,
+      articleUpserts: feedUpserts,
+      liveblogSkipped: feedLiveblogSkipped,
+    });
   }
 
   return {
     feedsAttempted: DEFAULT_FEEDS.length,
     articleUpserts,
+    liveblogSkipped,
     errors,
+    perFeed,
   };
 }

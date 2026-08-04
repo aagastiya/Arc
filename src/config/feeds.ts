@@ -21,92 +21,46 @@ export type FeedDefinition = {
 };
 
 export const DEFAULT_FEEDS: FeedDefinition[] = [
-  // Geopolitics / world
+  // Politics / US → stored as world (maps to Geopolitics / World on Today)
   {
-    url: "https://feeds.bbci.co.uk/news/world/rss.xml",
-    sourceName: "BBC World News",
+    url: "https://feeds.npr.org/1001/rss.xml",
+    sourceName: "NPR News",
     category: "world",
   },
   {
-    url: "https://www.aljazeera.com/xml/rss/all.xml",
-    sourceName: "Al Jazeera All News",
+    url: "https://rss.politico.com/politics-news.xml",
+    sourceName: "Politico",
     category: "world",
   },
   {
-    url: "https://www.theguardian.com/world/rss",
-    sourceName: "The Guardian World",
+    url: "https://thehill.com/feed/",
+    sourceName: "The Hill",
     category: "world",
   },
   {
-    url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
-    sourceName: "NYT World",
+    url: "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml",
+    sourceName: "NYT Politics",
     category: "world",
   },
   {
-    url: "http://rss.cnn.com/rss/edition_world.rss",
-    sourceName: "CNN World",
+    url: "https://feeds.washingtonpost.com/rss/politics",
+    sourceName: "Washington Post Politics",
     category: "world",
   },
-  // India
+  // Business
   {
-    url: "https://www.thehindu.com/news/national/feeder/default.rss",
-    sourceName: "The Hindu National",
-    category: "india",
-  },
-  {
-    url: "https://www.thehindu.com/feeder/default.rss",
-    sourceName: "The Hindu Top News",
-    category: "india",
-  },
-  {
-    url: "https://indianexpress.com/section/india/feed/",
-    sourceName: "Indian Express India",
-    category: "india",
-  },
-  {
-    url: "https://feeds.feedburner.com/ndtvnews-top-stories",
-    sourceName: "NDTV Top Stories",
-    category: "india",
-  },
-  {
-    url: "https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml",
-    sourceName: "Hindustan Times India",
-    category: "india",
-  },
-  {
-    url: "https://timesofindia.indiatimes.com/rssfeedstopstories.cms",
-    sourceName: "Times of India Top Stories",
-    category: "india",
-  },
-  // Finance
-  {
-    url: "https://news.google.com/rss/search?q=when:24h+allinurl:reuters.com/business",
-    sourceName: "Reuters Business (Google News)",
+    url: "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+    sourceName: "CNBC Top News",
     category: "finance",
   },
   {
-    url: "https://feeds.bloomberg.com/technology/news.rss",
-    sourceName: "Bloomberg Technology",
+    url: "https://feeds.bloomberg.com/markets/news.rss",
+    sourceName: "Bloomberg Markets",
     category: "finance",
   },
   {
-    url: "https://feeds.bbci.co.uk/news/business/rss.xml",
-    sourceName: "BBC Business",
-    category: "finance",
-  },
-  {
-    url: "https://www.livemint.com/rss/markets",
-    sourceName: "Livemint Markets",
-    category: "finance",
-  },
-  {
-    url: "https://www.business-standard.com/rss/latest.rss",
-    sourceName: "Business Standard",
-    category: "finance",
-  },
-  {
-    url: "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
-    sourceName: "Economic Times Markets",
+    url: "https://www.forbes.com/business/feed/",
+    sourceName: "Forbes Business",
     category: "finance",
   },
   // Tech
@@ -130,51 +84,15 @@ export const DEFAULT_FEEDS: FeedDefinition[] = [
     sourceName: "Ars Technica",
     category: "tech",
   },
+  // World
   {
-    url: "https://hnrss.org/frontpage",
-    sourceName: "Hacker News Frontpage",
-    category: "tech",
-  },
-  // Sports
-  {
-    url: "https://feeds.bbci.co.uk/sport/rss.xml",
-    sourceName: "BBC Sport",
-    category: "sports",
+    url: "https://www.theguardian.com/us/rss",
+    sourceName: "The Guardian US",
+    category: "world",
   },
   {
-    url: "https://www.espn.com/espn/rss/news",
-    sourceName: "ESPN Top Headlines",
-    category: "sports",
-  },
-  {
-    url: "https://www.espncricinfo.com/rss/content/story/feeds/0.xml",
-    sourceName: "ESPN Cricinfo",
-    category: "sports",
-  },
-  {
-    url: "https://timesofindia.indiatimes.com/rssfeeds/4719148.cms",
-    sourceName: "Times of India Sports",
-    category: "sports",
-  },
-  // Local
-  {
-    url: "https://www.thehindu.com/news/cities/Delhi/feeder/default.rss",
-    sourceName: "The Hindu Delhi",
-    category: "local",
-  },
-  {
-    url: "https://www.thehindu.com/news/cities/Bangalore/feeder/default.rss",
-    sourceName: "The Hindu Bangalore",
-    category: "local",
-  },
-  {
-    url: "https://www.thehindu.com/news/cities/mumbai/feeder/default.rss",
-    sourceName: "The Hindu Mumbai",
-    category: "local",
-  },
-  {
-    url: "https://www.hindustantimes.com/feeds/rss/cities/delhi-news/rssfeed.xml",
-    sourceName: "Hindustan Times Delhi",
-    category: "local",
+    url: "https://feeds.bbci.co.uk/news/world/rss.xml",
+    sourceName: "BBC World",
+    category: "world",
   },
 ];

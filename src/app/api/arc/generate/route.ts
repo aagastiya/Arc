@@ -7,7 +7,13 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 
+import { extractAndPersistGraph } from "@/lib/arc/extract-graph";
 import { isAllowedStoryCategoryDbValue } from "@/lib/categories";
+import {
+  resolveSourceText,
+  type ResolvedSourceText,
+  type SourceQuality,
+} from "@/lib/rss/extract-full-text";
 
 const ARC_VOICE_PROMPT = `You are Arc, a calm and clear news writer for a global English-speaking audience.
 
@@ -90,7 +96,13 @@ type ArticleRow = {
   category: string | null;
   published_at: string | null;
   link: string | null;
+  full_text: string | null;
+  full_text_fetched_at: string | null;
   feeds: { source_name: string | null } | { source_name: string | null }[] | null;
+};
+
+type ArticleWithSource = ArticleRow & {
+  resolved: ResolvedSourceText;
 };
 
 function parseKeyPoints(value: unknown): KeyPoint[] {
@@ -173,15 +185,18 @@ function getSourceName(article: ArticleRow): string | null {
   return feeds.source_name;
 }
 
-function buildUserMessage(articles: ArticleRow[]): string {
+function buildUserMessage(articles: ArticleWithSource[]): string {
   if (articles.length === 1) {
     const article = articles[0]!;
     const source = getSourceName(article) || "unknown";
     return `Title: ${article.title}
-Summary: ${article.summary || "(no summary available)"}
-Category: ${article.category || "general"}
+Source: ${source}
 Published: ${article.published_at || "unknown"}
-Source: ${source}`;
+Category: ${article.category || "general"}
+Source quality: ${article.resolved.quality}
+
+Article text:
+${article.resolved.text}`;
   }
 
   return articles
@@ -189,9 +204,12 @@ Source: ${source}`;
       const source = getSourceName(article) || "unknown outlet";
       return `Article ${index + 1} — Source: ${source} — Published: ${article.published_at || "unknown"}
 Title: ${article.title}
-Summary: ${article.summary || "(no summary available)"}`;
+Source quality: ${article.resolved.quality}
+
+Article text:
+${article.resolved.text}`;
     })
-    .join("\n\n");
+    .join("\n\n---\n\n");
 }
 
 export async function POST(request: Request) {
@@ -222,7 +240,9 @@ export async function POST(request: Request) {
 
     const { data: fetched, error: fetchError } = await supabase
       .from("articles")
-      .select("id,title,summary,category,published_at,link,feeds(source_name)")
+      .select(
+        "id,title,summary,category,published_at,link,full_text,full_text_fetched_at,feeds(source_name)",
+      )
       .in("id", articleIds);
 
     if (fetchError) {
@@ -243,14 +263,40 @@ export async function POST(request: Request) {
       );
     }
 
-    const articles = articleIds.map((id) => byId.get(id)!);
-    const firstArticle = articles[0]!;
+    const baseArticles = articleIds.map((id) => byId.get(id)!);
+    const firstArticle = baseArticles[0]!;
     const firstId = articleIds[0]!;
 
-    // 3. Build the user message for OpenAI
+    // 3. Resolve full text (cache → extract → thin fallback)
+    const articles: ArticleWithSource[] = [];
+    for (const article of baseArticles) {
+      const resolved = await resolveSourceText({
+        supabase,
+        articleId: article.id,
+        link: article.link,
+        summary: article.summary,
+        fullText: article.full_text,
+        fullTextFetchedAt: article.full_text_fetched_at,
+      });
+      articles.push({ ...article, resolved });
+    }
+
+    const sourceQuality: Array<{
+      article_id: string;
+      quality: SourceQuality;
+      text_length: number;
+      from_cache: boolean;
+    }> = articles.map((a) => ({
+      article_id: a.id,
+      quality: a.resolved.quality,
+      text_length: a.resolved.textLength,
+      from_cache: a.resolved.fromCache,
+    }));
+
+    // 4. Build the user message for OpenAI
     const userMessage = buildUserMessage(articles);
 
-    // 4. Call OpenAI
+    // 5. Call OpenAI
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const completion = await openai.chat.completions.create({
@@ -272,7 +318,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 5. Parse and validate the AI response
+    // 6. Parse and validate the AI response
     let parsed;
     try {
       parsed = JSON.parse(rawResponse);
@@ -302,7 +348,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 6. Upsert into stories table as draft (primary article = first ID)
+    // 7. Upsert into stories table as draft (primary article = first ID)
     const { data: savedStory, error: saveError } = await supabase
       .from("stories")
       .upsert(
@@ -328,7 +374,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 7. Link all provided articles in story_articles
+    // 8. Link all provided articles in story_articles
     const { error: linkError } = await supabase.from("story_articles").upsert(
       articleIds.map((article_id) => ({
         story_id: savedStory.id as string,
@@ -344,7 +390,27 @@ export async function POST(request: Request) {
       );
     }
 
-    // 8. Return everything for inspection
+    // 9. Graph extraction pass (non-fatal — story already saved)
+    let graph: Awaited<ReturnType<typeof extractAndPersistGraph>> | null = null;
+    try {
+      graph = await extractAndPersistGraph({
+        openai,
+        supabase,
+        storyId: savedStory.id as string,
+        headline: arcHeadline,
+        summary: arcSummary,
+        keyPoints: arcKeyPoints,
+        report: arcReport,
+        storyline: arcStoryline,
+      });
+    } catch (graphErr: unknown) {
+      const message =
+        graphErr instanceof Error ? graphErr.message : "Unknown graph error";
+      console.error("[arc/generate] graph extraction failed:", message);
+      graph = null;
+    }
+
+    // 10. Return everything for inspection
     return NextResponse.json({
       original: {
         id: firstArticle.id,
@@ -355,6 +421,7 @@ export async function POST(request: Request) {
         published_at: firstArticle.published_at,
       },
       article_ids: articleIds,
+      source_quality: sourceQuality,
       arc: {
         arc_headline: arcHeadline,
         arc_summary: arcSummary,
@@ -363,6 +430,7 @@ export async function POST(request: Request) {
         arc_report: arcReport,
         category,
       },
+      graph,
       saved_story: savedStory,
     });
   } catch (err: unknown) {
