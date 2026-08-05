@@ -8,6 +8,7 @@ import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 
 import { extractAndPersistGraph } from "@/lib/arc/extract-graph";
+import { clampImportance } from "@/lib/edition";
 import { verifyAndPersistStory } from "@/lib/arc/verify-story";
 import { isAllowedStoryCategoryDbValue } from "@/lib/categories";
 import {
@@ -221,6 +222,13 @@ export async function POST(request: Request) {
     // 1. Parse article IDs from query string (?id=uuid or ?id=uuid1,uuid2,...)
     const { searchParams } = new URL(request.url);
     const articleIds = parseArticleIds(searchParams.get("id"));
+    // Editor-scan clusters carry a significance score; omitted elsewhere so the
+    // column default (or an editor's existing value) stands.
+    const importanceRaw = searchParams.get("importance");
+    const importance =
+      importanceRaw !== null && importanceRaw.trim() !== ""
+        ? clampImportance(Number(importanceRaw))
+        : null;
 
     if (articleIds.length === 0) {
       return NextResponse.json(
@@ -365,6 +373,7 @@ export async function POST(request: Request) {
           arc_report: arcReport,
           category,
           is_live: false,
+          ...(importance !== null ? { importance } : {}),
         },
         { onConflict: "article_id" }
       )

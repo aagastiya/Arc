@@ -1,4 +1,5 @@
 import { AdminEditorPicks } from "@/components/admin-editor-picks";
+import { AdminNav } from "@/components/admin-nav";
 import { AdminSearchList } from "@/components/admin-search-list";
 import { SyncNewsButton } from "@/components/sync-news-button";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -62,7 +63,10 @@ export default async function AdminPage() {
             </h1>
             <p className="mt-1 text-sm text-zinc-400">Articles → Arc drafts</p>
           </div>
-          <SyncNewsButton />
+          <div className="flex flex-wrap items-center gap-3">
+            <AdminNav current="/admin" />
+            <SyncNewsButton />
+          </div>
         </div>
 
         <div className="mt-8">

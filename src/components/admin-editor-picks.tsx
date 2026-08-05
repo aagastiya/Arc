@@ -87,7 +87,7 @@ export function AdminEditorPicks() {
     try {
       const ids = cluster.article_ids.slice(0, 5).join(",");
       const res = await fetch(
-        `/api/arc/generate?id=${encodeURIComponent(ids)}`,
+        `/api/arc/generate?id=${encodeURIComponent(ids)}&importance=${cluster.importance}`,
         { method: "POST", credentials: "same-origin" },
       );
       const data = (await res.json().catch(() => ({}))) as {

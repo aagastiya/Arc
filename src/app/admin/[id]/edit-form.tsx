@@ -7,6 +7,7 @@ import {
   canonicalCategoryToDbValue,
   CATEGORY_DROPDOWN_OPTIONS,
 } from "@/lib/categories";
+import { IMPORTANCE_MAX, IMPORTANCE_MIN } from "@/lib/edition";
 
 type StorylineItem = {
   date: string;
@@ -23,9 +24,15 @@ type EditFormProps = {
     cover_image_url: string | null;
     is_live: boolean;
     is_section_hero: boolean;
+    importance: number;
     category: string;
   };
 };
+
+const IMPORTANCE_LEVELS = Array.from(
+  { length: IMPORTANCE_MAX - IMPORTANCE_MIN + 1 },
+  (_, index) => IMPORTANCE_MIN + index,
+);
 
 export function EditForm({ story }: EditFormProps) {
   const router = useRouter();
@@ -39,6 +46,7 @@ export function EditForm({ story }: EditFormProps) {
   const [clipUrl, setClipUrl] = useState<string | null>(story.clip_url);
   const [isLive, setIsLive] = useState(Boolean(story.is_live));
   const [isSectionHero, setIsSectionHero] = useState(Boolean(story.is_section_hero));
+  const [importance, setImportance] = useState(story.importance);
   const [category, setCategory] = useState<string>(() =>
     canonicalCategoryToDbValue(story.category),
   );
@@ -56,11 +64,13 @@ export function EditForm({ story }: EditFormProps) {
     setArcSummary(story.arc_summary);
     setArcStoryline(story.arc_storyline);
     setIsLive(Boolean(story.is_live));
+    setImportance(story.importance);
   }, [
     story.arc_headline,
     story.arc_summary,
     story.arc_storyline,
     story.is_live,
+    story.importance,
   ]);
 
   // Sync category from server after `router.refresh()` (same pattern as headline/summary sync).
@@ -177,6 +187,7 @@ export function EditForm({ story }: EditFormProps) {
           clip_url: clipUrl,
           cover_image_url: coverImageUrl,
           is_section_hero: isSectionHero,
+          importance,
           category,
         }),
       });
@@ -383,6 +394,38 @@ export function EditForm({ story }: EditFormProps) {
             onChange={onClipSelected}
             className="hidden"
           />
+        </div>
+      </div>
+
+      <div className="rounded-md border border-zinc-800 bg-zinc-950/60 p-4">
+        <p className="text-sm font-medium text-zinc-200">Importance</p>
+        <p className="mt-0.5 text-xs text-zinc-500">
+          {IMPORTANCE_MAX} is major national or global significance. Orders the
+          Today feed below section heroes.
+        </p>
+        <div
+          role="group"
+          aria-label="Importance"
+          className="mt-2 flex items-center gap-1"
+        >
+          {IMPORTANCE_LEVELS.map((level) => {
+            const active = level === importance;
+            return (
+              <button
+                key={level}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setImportance(level)}
+                className={`h-8 w-8 rounded text-xs font-semibold transition-colors ${
+                  active
+                    ? "bg-[#c8ff00] text-black"
+                    : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                }`}
+              >
+                {level}
+              </button>
+            );
+          })}
         </div>
       </div>
 

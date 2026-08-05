@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { clampImportance, IMPORTANCE_DEFAULT } from "@/lib/edition";
 import { formatRelativeTime } from "@/lib/time";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -42,7 +43,7 @@ export default async function StoryEditorPage({
     const { data: story, error: storyError } = await supabase
       .from("stories")
       .select(
-        "id,article_id,arc_headline,arc_summary,arc_storyline,clip_url,cover_image_url,is_live,is_section_hero,category,verification",
+        "id,article_id,arc_headline,arc_summary,arc_storyline,clip_url,cover_image_url,is_live,is_section_hero,importance,category,verification",
       )
       .eq("id", id)
       .single();
@@ -132,6 +133,11 @@ export default async function StoryEditorPage({
                     cover_image_url: story.cover_image_url,
                     is_live: story.is_live,
                     is_section_hero: Boolean(story.is_section_hero),
+                    importance: clampImportance(
+                      typeof story.importance === "number"
+                        ? story.importance
+                        : IMPORTANCE_DEFAULT,
+                    ),
                     category: typeof story.category === "string" ? story.category : "",
                   }}
                 />

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isAllowedStoryCategoryDbValue } from "@/lib/categories";
+import { IMPORTANCE_MAX, IMPORTANCE_MIN } from "@/lib/edition";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type StorylineItem = {
@@ -102,6 +103,36 @@ export async function PATCH(
         );
       }
       updateData.cover_image_url = value;
+    }
+
+    if (hasOwn(body, "importance")) {
+      const value = body.importance;
+      if (
+        typeof value !== "number" ||
+        !Number.isInteger(value) ||
+        value < IMPORTANCE_MIN ||
+        value > IMPORTANCE_MAX
+      ) {
+        return NextResponse.json(
+          {
+            error: `importance must be an integer between ${IMPORTANCE_MIN} and ${IMPORTANCE_MAX}`,
+          },
+          { status: 400 },
+        );
+      }
+      updateData.importance = value;
+    }
+
+    // Editors carry a story into today's edition; they never set the timestamp.
+    if (hasOwn(body, "carried_over")) {
+      const value = body.carried_over;
+      if (typeof value !== "boolean") {
+        return NextResponse.json(
+          { error: "carried_over must be a boolean" },
+          { status: 400 },
+        );
+      }
+      updateData.carried_over_at = value ? new Date().toISOString() : null;
     }
 
     let validatedCategoryFromBody: string | undefined;

@@ -1,3 +1,9 @@
+import {
+  clampImportance,
+  editionDayFilter,
+  editionDayStart,
+  IMPORTANCE_DEFAULT,
+} from "@/lib/edition";
 import { createClient } from "@/lib/supabase/server";
 
 export type LiveStoryKeyPoint = {
@@ -26,7 +32,10 @@ export type LiveStory = {
   cover_image_url: string | null;
   category: string;
   is_section_hero: boolean;
+  importance: number;
   published_at: string | null;
+  created_at: string;
+  carried_over_at: string | null;
   original_title: string;
   original_link: string;
   source_name: string | null;
@@ -43,7 +52,10 @@ type StoryRow = {
   cover_image_url: string | null;
   category: string;
   is_section_hero: boolean;
+  importance: number | null;
   published_at: string | null;
+  created_at: string;
+  carried_over_at: string | null;
   articles:
     | {
         title: string;
@@ -151,7 +163,10 @@ function toLiveStory(row: StoryRow): LiveStory {
     cover_image_url: row.cover_image_url,
     category: row.category,
     is_section_hero: Boolean(row.is_section_hero),
+    importance: clampImportance(row.importance ?? IMPORTANCE_DEFAULT),
     published_at: row.published_at,
+    created_at: row.created_at,
+    carried_over_at: row.carried_over_at,
     original_title: article?.title ?? "",
     original_link: article?.link ?? "",
     source_name: getSourceName(article?.feeds ?? null),
@@ -159,8 +174,12 @@ function toLiveStory(row: StoryRow): LiveStory {
 }
 
 const STORY_SELECT =
-  "id,arc_headline,arc_summary,arc_storyline,arc_key_points,arc_report,clip_url,cover_image_url,category,is_section_hero,published_at,articles!stories_article_id_fkey(title,link,feeds(source_name))";
+  "id,arc_headline,arc_summary,arc_storyline,arc_key_points,arc_report,clip_url,cover_image_url,category,is_section_hero,importance,published_at,created_at,carried_over_at,articles!stories_article_id_fkey(title,link,feeds(source_name))";
 
+/**
+ * Today's edition, in reader order: heaviest first, newest breaking ties. The
+ * page lifts each category's hero out of this list before rendering the rest.
+ */
 export async function getLiveStories(): Promise<LiveStory[]> {
   try {
     const supabase = await createClient();
@@ -168,7 +187,9 @@ export async function getLiveStories(): Promise<LiveStory[]> {
       .from("stories")
       .select(STORY_SELECT)
       .eq("is_live", true)
-      .order("published_at", { ascending: false, nullsFirst: false })
+      .or(editionDayFilter(editionDayStart()))
+      .order("importance", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
       .limit(50);
 
     if (error) {
@@ -186,6 +207,10 @@ export async function getLiveStories(): Promise<LiveStory[]> {
   }
 }
 
+/**
+ * A single published story, with no edition-day window: permalinks and event
+ * timelines keep working after a story leaves the Today page.
+ */
 export async function getLiveStoryById(id: string): Promise<LiveStory | null> {
   try {
     const supabase = await createClient();
