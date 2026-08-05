@@ -8,6 +8,7 @@ import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 
 import { extractAndPersistGraph } from "@/lib/arc/extract-graph";
+import { verifyAndPersistStory } from "@/lib/arc/verify-story";
 import { isAllowedStoryCategoryDbValue } from "@/lib/categories";
 import {
   resolveSourceText,
@@ -410,7 +411,32 @@ export async function POST(request: Request) {
       graph = null;
     }
 
-    // 10. Return everything for inspection
+    // 10. Verification pass (non-fatal — story already saved)
+    let verification: Awaited<ReturnType<typeof verifyAndPersistStory>> | null =
+      null;
+    try {
+      verification = await verifyAndPersistStory({
+        openai,
+        supabase,
+        storyId: savedStory.id as string,
+        headline: arcHeadline,
+        summary: arcSummary,
+        keyPoints: arcKeyPoints,
+        report: arcReport,
+        sources: articles.map((article) => ({
+          outlet: getSourceName(article) || "unknown outlet",
+          title: article.title,
+          text: article.resolved.text,
+        })),
+      });
+    } catch (verifyErr: unknown) {
+      const message =
+        verifyErr instanceof Error ? verifyErr.message : "Unknown verify error";
+      console.error("[arc/generate] verification failed:", message);
+      verification = null;
+    }
+
+    // 11. Return everything for inspection
     return NextResponse.json({
       original: {
         id: firstArticle.id,
@@ -431,6 +457,7 @@ export async function POST(request: Request) {
         category,
       },
       graph,
+      verification,
       saved_story: savedStory,
     });
   } catch (err: unknown) {

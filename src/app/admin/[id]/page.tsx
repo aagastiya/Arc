@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 import { EditForm } from "./edit-form";
 import { AdminGraphPanel } from "./graph-panel";
+import { parseVerification, VerificationPanel } from "./verification-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,7 @@ export default async function StoryEditorPage({
     const { data: story, error: storyError } = await supabase
       .from("stories")
       .select(
-        "id,article_id,arc_headline,arc_summary,arc_storyline,clip_url,cover_image_url,is_live,is_section_hero,category",
+        "id,article_id,arc_headline,arc_summary,arc_storyline,clip_url,cover_image_url,is_live,is_section_hero,category,verification",
       )
       .eq("id", id)
       .single();
@@ -137,6 +138,8 @@ export default async function StoryEditorPage({
               </div>
             </section>
           </div>
+
+          <VerificationPanel verification={parseVerification(story.verification)} />
 
           <AdminGraphPanel storyId={story.id} />
         </div>

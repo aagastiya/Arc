@@ -8,6 +8,7 @@ import {
   type CanonicalCategory,
 } from "@/lib/categories";
 import { createClient } from "@/lib/supabase/server";
+import { getStoryEventChip } from "@/lib/events";
 import { getLiveStoryById } from "@/lib/stories";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +34,11 @@ export default async function TodayStoryPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [story, supabase] = await Promise.all([getLiveStoryById(id), createClient()]);
+  const [story, supabase, eventChip] = await Promise.all([
+    getLiveStoryById(id),
+    createClient(),
+    getStoryEventChip(id),
+  ]);
 
   // ── unified slide rail: all live stories in canonical category order ───────
   type LiveStoryRow = {
@@ -132,6 +137,27 @@ export default async function TodayStoryPage({
       ) : null}
 
       <ClipPlayer allStories={allStories} currentIndex={globalIndex} />
+
+      {eventChip ? (
+        <div className="bg-[var(--background)] px-4 pt-3">
+          <Link
+            href={`/event/${eventChip.id}`}
+            className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-[11px] text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
+          >
+            <span className="shrink-0 uppercase tracking-wide text-zinc-500">
+              Part of
+            </span>
+            <span className="truncate font-medium text-zinc-300">
+              {eventChip.title}
+            </span>
+            <span className="shrink-0 text-zinc-600">·</span>
+            <span className="shrink-0">
+              {eventChip.storyCount}{" "}
+              {eventChip.storyCount === 1 ? "story" : "stories"}
+            </span>
+          </Link>
+        </div>
+      ) : null}
 
       <div className="bg-[var(--background)] px-4 pb-3 pt-2">
         <InlineStoryline
