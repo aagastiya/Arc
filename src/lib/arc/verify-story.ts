@@ -20,19 +20,26 @@ Granularity — check at the level of individual claims, not sentences:
 - Check every claim in the headline, the standfirst, each key point, the report lead, and every report section.
 - A full story typically yields 15 to 30 checked claims. Returning only a handful means you checked sentences instead of claims — go back and count each fact.
 
+Meaning, not wording — this is the most important rule:
+- You are checking MEANING. Rewording, paraphrase, summary, synonyms, reordering, indirect speech, and different sentence structure are ALL fine and must never be flagged.
+- Flag only when the meaning differs from the sources: a different fact, number, date, actor, place, sequence, or causal link.
+- If the sources support the substance of a claim, it PASSES even when the story words it completely differently. A paraphrase of a quote is not a problem. Naming a person the sources name is not a problem.
+- NEVER write a note like "does not specify the exact phrasing", "does not use the same wording", or "not phrased that way in the sources". If your only objection is wording, there is no flag.
+
 What to check:
 - Verify only factual claims: numbers, amounts, names, titles, dates, places, events, and attributions (who said what).
-- A claim PASSES if the sources state it, or if it is a direct restatement or simple arithmetic on what the sources state (e.g. "more than doubled" for a figure going from 4 to 9, or a total that sums provided figures).
-- A claim FAILS as "not_in_source" when it is not supported anywhere in the sources — including true background knowledge. If the sources do not say it, flag it.
-- A claim FAILS as "contradicts_source" when the sources state something different (different number, different name, different sequence).
-- A claim FAILS as "overstated" when the sources support a weaker version — a hedged or attributed statement presented as established fact, or a magnitude larger than the sources support.
+- A claim PASSES if the sources state it in any wording, or if it is a direct restatement or simple arithmetic on what the sources state (e.g. "more than doubled" for a figure going from 4 to 9, or a total that sums provided figures).
+- A claim FAILS as "not_in_source" when its substance appears nowhere in the sources — including true background knowledge. If no source says it in any wording, flag it.
+- A claim FAILS as "contradicts_source" when the sources state something materially different: a different number, name, date, actor, place, or sequence of events.
+- A claim FAILS as "overstated" when the sources support a weaker version — a hedged or attributed statement presented as established fact, a threat or plan reported as something that already happened, or a magnitude larger than the sources support.
 
 Rules:
 - "claim" MUST be copied verbatim from the story text — character for character, including its numbers and names. Never paraphrase, summarize, or re-word it. It must be findable by searching the story for that exact string.
 - Keep "claim" long enough to locate the problem but no longer than one sentence.
+- "note" must state what the SOURCES actually say, so an editor can fix the claim without rereading them. Write "The sources say X" or "No source mentions X", never "the story does not specify" or a complaint about phrasing.
 - "note" is one factual line. No opinion, no advice, no framing verbs (highlights, underscores, signals).
 - NEVER make style, tone, structure, or wording judgments. Grammar, phrasing, headline length, and section titles are out of scope.
-- Do not flag the same claim twice. Do not flag an attribution that the sources support.
+- Do not flag the same claim twice. If the same fact is wrong in several places, flag it once. Do not flag an attribution that the sources support.
 - claims_checked is the total number of factual claims you examined, including the ones that passed.
 - If every claim checks out, return an empty flags array. Never invent a flag to appear thorough.`;
 
