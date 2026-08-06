@@ -60,14 +60,9 @@ export default async function TodayStoryPage({
 
   const rows = (allLiveStories ?? []) as LiveStoryRow[];
 
-  const byBucket: Record<CanonicalCategory, LiveStoryRow[]> = {
-    World: [],
-    India: [],
-    Finance: [],
-    Tech: [],
-    Sports: [],
-    Local: [],
-  };
+  const byBucket = Object.fromEntries(
+    CANONICAL_CATEGORY_ORDER.map((bucket) => [bucket, [] as LiveStoryRow[]]),
+  ) as Record<CanonicalCategory, LiveStoryRow[]>;
 
   for (const row of rows) {
     const bucket = normalizeStoryCategory(row.category);

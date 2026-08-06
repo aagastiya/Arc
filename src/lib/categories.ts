@@ -5,6 +5,7 @@ export const CANONICAL_CATEGORY_ORDER = [
   "India",
   "Finance",
   "Tech",
+  "Culture",
   "Sports",
   "Local",
 ] as const;
@@ -28,6 +29,9 @@ export function normalizeStoryCategory(raw: string): StoryCategoryBucket {
   if (k === "tech" || k === "technology" || k === "science") {
     return "Tech";
   }
+  if (k === "culture" || k === "entertainment" || k === "arts") {
+    return "Culture";
+  }
   if (k === "sports" || k === "sport") {
     return "Sports";
   }
@@ -44,6 +48,7 @@ export const CATEGORY_DROPDOWN_OPTIONS = [
   { value: "india", label: "India" },
   { value: "finance", label: "Finance" },
   { value: "tech", label: "Tech" },
+  { value: "culture", label: "Culture" },
   { value: "sports", label: "Sports" },
   { value: "local", label: "Local" },
 ] as const;
@@ -70,6 +75,8 @@ export function canonicalCategoryToDbValue(canonical: string): StoryCategoryDbVa
       return "finance";
     case "Tech":
       return "tech";
+    case "Culture":
+      return "culture";
     case "Sports":
       return "sports";
     case "Local":
