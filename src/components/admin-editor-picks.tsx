@@ -64,16 +64,20 @@ type ScanResponse = {
   details?: string;
 };
 
-/** Survives navigation away from /admin so a long drafting session isn't lost. */
+/** Survives navigation and a closed tab so a long drafting session isn't lost. */
 type PersistedScan = {
-  version: 1;
+  version: 2;
+  savedAt: number;
   clusters: Cluster[];
   meta: ScanMeta;
   states: Record<string, CardState>;
   collapsed: Record<string, boolean>;
 };
 
-const STORAGE_KEY = "arc.editor.scan.v1";
+const STORAGE_KEY = "arc.editor.scan.v2";
+
+/** Yesterday's picks are not today's paper; past this age, scan again. */
+const MAX_RESTORE_AGE_MS = 12 * 60 * 60 * 1000;
 const BUCKETS: StoryCategoryBucket[] = [...CANONICAL_CATEGORY_ORDER, "Other"];
 
 /** Article ids identify a pick; the model's ordering of them must not matter. */
@@ -86,26 +90,30 @@ function clusterKey(cluster: Cluster): string {
 function readPersisted(): PersistedScan | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PersistedScan;
-    if (parsed?.version !== 1 || !Array.isArray(parsed.clusters)) return null;
+    if (parsed?.version !== 2 || !Array.isArray(parsed.clusters)) return null;
+    if (Date.now() - (parsed.savedAt ?? 0) > MAX_RESTORE_AGE_MS) return null;
     return parsed;
   } catch {
     return null;
   }
 }
 
-function writePersisted(payload: PersistedScan | null): void {
+function writePersisted(payload: Omit<PersistedScan, "savedAt"> | null): void {
   if (typeof window === "undefined") return;
   try {
     if (payload) {
-      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ ...payload, savedAt: Date.now() }),
+      );
     } else {
-      window.sessionStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(STORAGE_KEY);
     }
   } catch {
-    // A full or blocked sessionStorage costs persistence, not the session.
+    // Full or blocked storage costs persistence, not the session.
   }
 }
 
@@ -307,8 +315,8 @@ export function AdminEditorPicks() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
 
-  // sessionStorage is unreachable during the server render, so the last scan is
-  // read after mount rather than as initial state.
+  // Storage is unreachable during the server render, so the last scan is read
+  // after mount rather than as initial state.
   useEffect(() => {
     const saved = readPersisted();
     if (saved) {
@@ -326,7 +334,7 @@ export function AdminEditorPicks() {
       writePersisted(null);
       return;
     }
-    writePersisted({ version: 1, clusters, meta, states, collapsed });
+    writePersisted({ version: 2, clusters, meta, states, collapsed });
   }, [restored, clusters, meta, states, collapsed]);
 
   const groups = useMemo(() => groupByCategory(clusters ?? []), [clusters]);
