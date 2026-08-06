@@ -137,6 +137,15 @@ type ScanArticle = {
   published_at: string | null;
 };
 
+/** A story already drafted from a cluster's articles, so it is never drafted twice. */
+type ExistingStory = {
+  id: string;
+  headline: string;
+  importance: number | null;
+  /** null when the story predates verification or the pass failed. */
+  flags: number | null;
+};
+
 type ClusterOut = {
   topic: string;
   why_it_matters: string;
@@ -147,6 +156,7 @@ type ClusterOut = {
   articles: Array<{ id: string; title: string; source_name: string }>;
   matched_event: { id: string; title: string } | null;
   proposed_event_title: string | null;
+  existing_story: ExistingStory | null;
 };
 
 type RunningEvent = { id: string; title: string };
@@ -269,12 +279,87 @@ function parseClusters(
       })),
       matched_event: matchedEvent,
       proposed_event_title: proposedTitle,
+      existing_story: null,
     });
   }
 
   return clusters
     .sort((a, b) => b.importance - a.importance)
     .slice(0, MAX_CLUSTERS_PER_CATEGORY);
+}
+
+/**
+ * Stories already written from these articles, newest first per article. Lets the
+ * panel show a finished pick as done instead of offering to draft it again.
+ */
+async function loadExistingStories(
+  supabase: ReturnType<typeof createAdminClient>,
+  articleIds: string[],
+): Promise<Map<string, ExistingStory>> {
+  const byArticle = new Map<string, ExistingStory>();
+  if (articleIds.length === 0) {
+    return byArticle;
+  }
+
+  const { data: links, error: linkErr } = await supabase
+    .from("story_articles")
+    .select("story_id,article_id")
+    .in("article_id", articleIds);
+
+  if (linkErr || !links || links.length === 0) {
+    if (linkErr) {
+      console.error("[editor/scan] story_articles lookup failed:", linkErr.message);
+    }
+    return byArticle;
+  }
+
+  const storyIds = [...new Set(links.map((l) => l.story_id as string))];
+  const { data: stories, error: storyErr } = await supabase
+    .from("stories")
+    .select("id,arc_headline,importance,verification,created_at")
+    .in("id", storyIds)
+    .order("created_at", { ascending: false });
+
+  if (storyErr || !stories) {
+    if (storyErr) {
+      console.error("[editor/scan] story lookup failed:", storyErr.message);
+    }
+    return byArticle;
+  }
+
+  const rank = new Map(stories.map((s, index) => [s.id as string, index]));
+  const byId = new Map(
+    stories.map((s) => {
+      const verification = s.verification as { flags?: unknown[] } | null;
+      return [
+        s.id as string,
+        {
+          id: s.id as string,
+          headline: (s.arc_headline as string) ?? "(untitled)",
+          importance: (s.importance as number | null) ?? null,
+          flags: Array.isArray(verification?.flags)
+            ? verification.flags.length
+            : null,
+        } satisfies ExistingStory,
+      ];
+    }),
+  );
+
+  for (const link of links) {
+    const story = byId.get(link.story_id as string);
+    if (!story) continue;
+
+    // Stories are ordered newest first, so a lower rank wins.
+    const current = byArticle.get(link.article_id as string);
+    if (
+      !current ||
+      (rank.get(story.id) ?? Infinity) < (rank.get(current.id) ?? Infinity)
+    ) {
+      byArticle.set(link.article_id as string, story);
+    }
+  }
+
+  return byArticle;
 }
 
 /** One model pass over a single section's articles. */
@@ -495,6 +580,15 @@ export async function POST() {
         clusters: found.length,
       });
     });
+
+    const existing = await loadExistingStories(
+      supabase,
+      [...new Set(clusters.flatMap((c) => c.article_ids))],
+    );
+    for (const cluster of clusters) {
+      cluster.existing_story =
+        cluster.article_ids.map((id) => existing.get(id)).find(Boolean) ?? null;
+    }
 
     return NextResponse.json({
       window_hours: windowHours,
