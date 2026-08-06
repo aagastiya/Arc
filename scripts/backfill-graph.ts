@@ -36,6 +36,7 @@ type ArticleRow = {
   summary: string | null;
   full_text: string | null;
   full_text_fetched_at: string | null;
+  full_text_failed_at: string | null;
 };
 
 function sleep(ms: number): Promise<void> {
@@ -124,7 +125,7 @@ async function loadLinkedArticles(
 
   const { data: articles, error: artErr } = await supabase
     .from("articles")
-    .select("id,link,summary,full_text,full_text_fetched_at")
+    .select("id,link,summary,full_text,full_text_fetched_at,full_text_failed_at")
     .in("id", articleIds);
 
   if (artErr) {
@@ -192,6 +193,7 @@ async function main(): Promise<void> {
           summary: article.summary,
           fullText: article.full_text,
           fullTextFetchedAt: article.full_text_fetched_at,
+          fullTextFailedAt: article.full_text_failed_at,
         });
       }
 

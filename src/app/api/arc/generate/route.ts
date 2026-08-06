@@ -13,6 +13,7 @@ import { verifyAndPersistStory } from "@/lib/arc/verify-story";
 import { isAllowedStoryCategoryDbValue } from "@/lib/categories";
 import {
   resolveSourceText,
+  type ExtractOutcome,
   type ResolvedSourceText,
   type SourceQuality,
 } from "@/lib/rss/extract-full-text";
@@ -102,6 +103,7 @@ type ArticleRow = {
   link: string | null;
   full_text: string | null;
   full_text_fetched_at: string | null;
+  full_text_failed_at: string | null;
   feeds: { source_name: string | null } | { source_name: string | null }[] | null;
 };
 
@@ -253,7 +255,7 @@ export async function POST(request: Request) {
     const { data: fetched, error: fetchError } = await supabase
       .from("articles")
       .select(
-        "id,title,summary,category,published_at,link,full_text,full_text_fetched_at,feeds(source_name)",
+        "id,title,summary,category,published_at,link,full_text,full_text_fetched_at,full_text_failed_at,feeds(source_name)",
       )
       .in("id", articleIds);
 
@@ -279,31 +281,72 @@ export async function POST(request: Request) {
     const firstArticle = baseArticles[0]!;
     const firstId = articleIds[0]!;
 
-    // 3. Resolve full text (cache → extract → thin fallback)
-    const articles: ArticleWithSource[] = [];
-    for (const article of baseArticles) {
-      const resolved = await resolveSourceText({
-        supabase,
-        articleId: article.id,
-        link: article.link,
-        summary: article.summary,
-        fullText: article.full_text,
-        fullTextFetchedAt: article.full_text_fetched_at,
-      });
-      articles.push({ ...article, resolved });
-    }
+    // 3. Resolve full text (cache → extract → thin fallback). In parallel, so a
+    // slow publisher costs its own latency rather than the whole cluster's.
+    const settled = await Promise.allSettled(
+      baseArticles.map((article) =>
+        resolveSourceText({
+          supabase,
+          articleId: article.id,
+          link: article.link,
+          summary: article.summary,
+          fullText: article.full_text,
+          fullTextFetchedAt: article.full_text_fetched_at,
+          fullTextFailedAt: article.full_text_failed_at,
+        }),
+      ),
+    );
+
+    const articles: ArticleWithSource[] = baseArticles.map((article, index) => {
+      const result = settled[index]!;
+      if (result.status === "fulfilled") {
+        return { ...article, resolved: result.value };
+      }
+      // Resolution itself broke (not just the fetch) — keep the summary and go on.
+      const message =
+        result.reason instanceof Error
+          ? result.reason.message
+          : String(result.reason);
+      console.error(`[arc/generate] source resolve failed for ${article.id}:`, message);
+      const summary = (article.summary ?? "").trim();
+      return {
+        ...article,
+        resolved: {
+          articleId: article.id,
+          quality: summary.length >= 500 ? "full" : "thin",
+          text: summary || "(no summary available)",
+          textLength: summary.length,
+          fromCache: true,
+          outcome: "failed",
+          durationMs: 0,
+        },
+      };
+    });
 
     const sourceQuality: Array<{
       article_id: string;
       quality: SourceQuality;
       text_length: number;
       from_cache: boolean;
+      outcome: ExtractOutcome;
+      duration_ms: number;
     }> = articles.map((a) => ({
       article_id: a.id,
       quality: a.resolved.quality,
       text_length: a.resolved.textLength,
       from_cache: a.resolved.fromCache,
+      outcome: a.resolved.outcome,
+      duration_ms: a.resolved.durationMs,
     }));
+
+    const slowest = Math.max(0, ...articles.map((a) => a.resolved.durationMs));
+    if (slowest > 0) {
+      console.log(
+        `[arc/generate] source text: ${articles
+          .map((a) => `${a.resolved.outcome} ${a.resolved.durationMs}ms`)
+          .join(", ")}`,
+      );
+    }
 
     // 4. Build the user message for OpenAI
     const userMessage = buildUserMessage(articles);

@@ -81,6 +81,7 @@ type ArticleRow = {
   link: string | null;
   full_text: string | null;
   full_text_fetched_at: string | null;
+  full_text_failed_at: string | null;
   feeds: { source_name: string | null } | { source_name: string | null }[] | null;
 };
 
@@ -418,7 +419,7 @@ async function loadSources(
   const { data: articles, error: artErr } = await supabase
     .from("articles")
     .select(
-      "id,title,summary,link,full_text,full_text_fetched_at,feeds(source_name)",
+      "id,title,summary,link,full_text,full_text_fetched_at,full_text_failed_at,feeds(source_name)",
     )
     .in("id", [...ids]);
 
@@ -436,6 +437,7 @@ async function loadSources(
       summary: article.summary,
       fullText: article.full_text,
       fullTextFetchedAt: article.full_text_fetched_at,
+      fullTextFailedAt: article.full_text_failed_at,
     });
     console.log(
       `Source: ${article.id} — ${outletOf(article)} (${resolved.textLength} chars, ${resolved.quality})`,
