@@ -1,6 +1,13 @@
 import type OpenAI from "openai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import {
+  canOverwrite,
+  lookupEntity,
+  type DescriptionSource,
+  type WikidataCandidate,
+} from "@/lib/graph/wikidata";
+
 export const GRAPH_EXTRACT_PROMPT = `You are Arc's knowledge-graph extractor. Given Arc story text and a list of running events, return ONLY valid JSON (no markdown, no prose) in this exact shape:
 
 {
@@ -27,6 +34,7 @@ Rules:
 - Canonical names: use the person's complete name as given in the article (e.g. "John Farinacci", not "Farinacci"). If the article only ever gives a partial name, use that. Prefer the fullest form that appears in the text.
 - role = "subject" if the story is primarily about them; otherwise "mentioned".
 - short_description: factual, neutral, Arc voice. No opinion, speculation, or framing verbs (highlights, underscores, signals, etc.). Prefer "" over inventing facts.
+- NEVER state a role, title, office, or job from your own knowledge. Only describe someone as a president, chief executive, senator, director, or minister if the story text says so. If the story text does not give a role, leave short_description empty rather than supplying one you happen to know.
 - aliases: only names that appear in the story text; may be [].
 - Running events are provided below. action = "match" only if this story clearly belongs to one listed event — use that event's id.
 - action = "propose" ONLY if this situation will clearly keep producing ongoing news (a durable thread). Provide title + open_question.
@@ -40,6 +48,9 @@ export type GraphEntityOut = {
   short_description: string;
   role: "subject" | "mentioned";
   id: string;
+  role_title: string;
+  wikidata_id: string | null;
+  description_source: DescriptionSource;
 };
 
 export type GraphEventOut = {
@@ -66,10 +77,41 @@ type EntityRow = {
   name: string;
   aliases: string[] | null;
   short_description: string;
+  role_title: string | null;
+  wikidata_id: string | null;
+  description_source: string | null;
+  identity_verified_at: string | null;
 };
+
+export const ENTITY_SELECT =
+  "id,kind,name,aliases,short_description,role_title,wikidata_id,description_source,identity_verified_at";
 
 function lower(s: string): string {
   return s.trim().toLowerCase();
+}
+
+const GROUNDING_STOPWORDS = new Set([
+  "the", "a", "an", "and", "or", "of", "for", "in", "on", "at", "to", "from",
+  "with", "by", "is", "was", "are", "were", "be", "been", "as", "that", "this",
+  "who", "which", "its", "his", "her", "their", "has", "have", "had",
+]);
+
+/**
+ * Does this description come from the story, or from what the model happens to
+ * know? Only descriptions built out of words the story actually used survive an
+ * unmatched Wikidata lookup.
+ */
+function isGroundedIn(description: string, storyText: string): boolean {
+  const haystack = ` ${storyText.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
+  const words = description
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .filter((w) => w.length > 2 && !GROUNDING_STOPWORDS.has(w));
+
+  if (words.length === 0) return false;
+  const present = words.filter((w) => haystack.includes(` ${w} `)).length;
+  return present / words.length >= 0.7;
 }
 
 function uniqueAliases(values: string[]): string[] {
@@ -212,6 +254,71 @@ function parseExtraction(raw: unknown): {
   };
 }
 
+type ResolvedIdentity = {
+  name: string;
+  shortDescription: string;
+  roleTitle: string;
+  wikidataId: string | null;
+  source: DescriptionSource;
+  verifiedAt: string | null;
+  candidates: WikidataCandidate[];
+};
+
+/**
+ * Decide what a newly seen entity is, in this order: Wikidata if it answers
+ * clearly, the story's own words if not, and the model's sentence only when it
+ * cannot be traced to the story — in which case it is marked as such. Anchoring
+ * is best-effort; a Wikidata outage must not stop the graph.
+ */
+async function resolveNewIdentity(
+  ent: { kind: "person" | "organization"; name: string; short_description: string },
+  storyText: string,
+): Promise<ResolvedIdentity> {
+  const grounded = isGroundedIn(ent.short_description, storyText);
+  const fallback: ResolvedIdentity = {
+    name: ent.name,
+    shortDescription: grounded ? ent.short_description : "",
+    roleTitle: "",
+    wikidataId: null,
+    source: grounded ? "source_text" : "model",
+    verifiedAt: null,
+    candidates: [],
+  };
+
+  let lookup;
+  try {
+    lookup = await lookupEntity(ent.name, ent.kind);
+  } catch {
+    return fallback;
+  }
+
+  if (lookup.status === "found") {
+    return {
+      // Wikidata's label is the canonical name; the story's version becomes an alias.
+      name: lookup.label || ent.name,
+      shortDescription: lookup.description || fallback.shortDescription,
+      roleTitle: lookup.roleTitle,
+      wikidataId: lookup.id,
+      source: "wikidata",
+      verifiedAt: new Date().toISOString(),
+      candidates: [],
+    };
+  }
+
+  if (lookup.status === "ambiguous") {
+    // Several people share this name; an editor picks, and until then the
+    // model's line is labelled for what it is.
+    return {
+      ...fallback,
+      shortDescription: ent.short_description,
+      source: "model",
+      candidates: lookup.candidates,
+    };
+  }
+
+  return fallback;
+}
+
 export async function extractAndPersistGraph(opts: {
   openai: OpenAI;
   supabase: SupabaseClient;
@@ -283,7 +390,7 @@ export async function extractAndPersistGraph(opts: {
 
   const { data: existingEntities, error: entFetchErr } = await opts.supabase
     .from("entities")
-    .select("id,kind,name,aliases,short_description");
+    .select(ENTITY_SELECT);
 
   if (entFetchErr) {
     throw new Error(`Failed to load entities: ${entFetchErr.message}`);
@@ -304,15 +411,31 @@ export async function extractAndPersistGraph(opts: {
         ...(lower(found.name) !== lower(ent.name) ? [ent.name] : []),
       ]).filter((a) => lower(a) !== lower(found.name));
 
-      const patch: { aliases?: string[]; short_description?: string } = {};
+      // Aliases accumulate freely, but identity is never rewritten from a story:
+      // an empty description may be filled, an existing one is left alone.
+      const patch: {
+        aliases?: string[];
+        short_description?: string;
+        description_source?: DescriptionSource;
+      } = {};
       if (mergedAliases.length !== (found.aliases ?? []).length) {
         patch.aliases = mergedAliases;
       }
+
+      const incomingSource: DescriptionSource = isGroundedIn(
+        ent.short_description,
+        storyText,
+      )
+        ? "source_text"
+        : "model";
+
       if (
-        (!found.short_description || !found.short_description.trim()) &&
-        ent.short_description
+        !found.short_description?.trim() &&
+        ent.short_description &&
+        canOverwrite(found.description_source, incomingSource)
       ) {
         patch.short_description = ent.short_description;
+        patch.description_source = incomingSource;
       }
 
       if (Object.keys(patch).length > 0) {
@@ -326,6 +449,8 @@ export async function extractAndPersistGraph(opts: {
         found.aliases = patch.aliases ?? found.aliases;
         found.short_description =
           patch.short_description ?? found.short_description;
+        found.description_source =
+          patch.description_source ?? found.description_source;
       }
 
       const { error: linkErr } = await opts.supabase.from("story_entities").upsert(
@@ -348,19 +473,34 @@ export async function extractAndPersistGraph(opts: {
         short_description: found.short_description || ent.short_description,
         role: ent.role,
         id: found.id,
+        role_title: found.role_title ?? "",
+        wikidata_id: found.wikidata_id,
+        description_source: (found.description_source ??
+          "model") as DescriptionSource,
       });
       continue;
     }
+
+    // A name Arc has not seen before: ask Wikidata who this is before trusting
+    // the model's sentence about them.
+    const identity = await resolveNewIdentity(ent, storyText);
 
     const { data: inserted, error: insErr } = await opts.supabase
       .from("entities")
       .insert({
         kind: ent.kind,
-        name: ent.name,
-        aliases: ent.aliases,
-        short_description: ent.short_description,
+        name: identity.name,
+        aliases: uniqueAliases(
+          identity.name === ent.name ? ent.aliases : [...ent.aliases, ent.name],
+        ).filter((a) => lower(a) !== lower(identity.name)),
+        short_description: identity.shortDescription,
+        role_title: identity.roleTitle,
+        wikidata_id: identity.wikidataId,
+        description_source: identity.source,
+        identity_verified_at: identity.verifiedAt,
+        identity_candidates: identity.candidates,
       })
-      .select("id,kind,name,aliases,short_description")
+      .select(ENTITY_SELECT)
       .single();
 
     if (insErr || !inserted) {
@@ -390,6 +530,10 @@ export async function extractAndPersistGraph(opts: {
       short_description: row.short_description,
       role: ent.role,
       id: row.id,
+      role_title: row.role_title ?? "",
+      wikidata_id: row.wikidata_id,
+      description_source: (row.description_source ??
+        "model") as DescriptionSource,
     });
   }
 
