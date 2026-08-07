@@ -12,6 +12,7 @@ import { AdminNav } from "@/components/admin-nav";
 import {
   CANONICAL_CATEGORY_ORDER,
   normalizeStoryCategory,
+  reviewCategorySlug,
   type StoryCategoryBucket,
 } from "@/lib/categories";
 import {
@@ -113,6 +114,15 @@ function CategoryBlock({
           <Warning text="No hero" tone="amber" />
         ) : null}
         {heroCount >= 2 ? <Warning text="2+ heroes" tone="amber" /> : null}
+
+        {label !== "Other" ? (
+          <Link
+            href={`/admin/review/${reviewCategorySlug(label as StoryCategoryBucket)}`}
+            className="ml-auto text-[10px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-[#c8ff00]"
+          >
+            Review drafts →
+          </Link>
+        ) : null}
       </header>
 
       {ordered.length === 0 ? (

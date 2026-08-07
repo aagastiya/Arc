@@ -3,6 +3,7 @@ import Link from "next/link";
 const LINKS = [
   { href: "/admin", label: "Editor" },
   { href: "/admin/edition", label: "Edition" },
+  { href: "/admin/review", label: "Review" },
   { href: "/admin/entities", label: "Entities" },
 ] as const;
 
@@ -10,7 +11,9 @@ export function AdminNav({ current }: { current: string }) {
   return (
     <nav aria-label="Admin sections" className="flex items-center gap-1">
       {LINKS.map((link) => {
-        const active = link.href === current;
+        const active =
+          link.href === current ||
+          (link.href !== "/admin" && current.startsWith(`${link.href}/`));
         return (
           <Link
             key={link.href}

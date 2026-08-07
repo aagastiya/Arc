@@ -92,6 +92,24 @@ export function categorySectionId(name: StoryCategoryBucket): string {
   return `section-${slug}`;
 }
 
+/** URL slug for Genre Review: /admin/review/world → World. */
+export function reviewCategorySlug(bucket: StoryCategoryBucket): string {
+  return bucket === "Other" ? "other" : bucket.toLowerCase();
+}
+
+/**
+ * Parse a Genre Review URL segment into a canonical bucket. Unknown slugs
+ * return null so the route can 404 instead of silently falling into World.
+ */
+export function parseReviewCategorySlug(
+  slug: string,
+): StoryCategoryBucket | null {
+  const k = slug.trim().toLowerCase();
+  if (k === "other") return "Other";
+  const match = CANONICAL_CATEGORY_ORDER.find((c) => c.toLowerCase() === k);
+  return match ?? null;
+}
+
 /** Picks the section lead: explicit `is_section_hero`, else newest (first in list), else null. */
 export function findSectionHero(stories: LiveStory[]): LiveStory | null {
   if (stories.length === 0) {
