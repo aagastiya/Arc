@@ -18,12 +18,13 @@ import {
   reviewCategorySlug,
 } from "@/lib/categories";
 import { clampImportance, IMPORTANCE_DEFAULT } from "@/lib/edition";
+import { newestSourcePublishedAt } from "@/lib/story-dates";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
 const STORY_SELECT =
-  "id,article_id,arc_headline,arc_summary,arc_key_points,arc_report,importance,category,verification,is_live,created_at";
+  "id,article_id,arc_headline,arc_summary,arc_key_points,arc_report,importance,category,verification,is_live,published_at,created_at";
 
 type StoryRow = {
   id: string;
@@ -36,6 +37,7 @@ type StoryRow = {
   category: string;
   verification: unknown;
   is_live: boolean;
+  published_at: string | null;
   created_at: string;
 };
 
@@ -97,6 +99,7 @@ export default async function AdminGenreReviewPage({
     .from("stories")
     .select(STORY_SELECT)
     .eq("is_live", false)
+    .is("archived_at", null)
     .order("importance", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
     .limit(200);
@@ -141,7 +144,7 @@ export default async function AdminGenreReviewPage({
     ] = await Promise.all([
       supabase
         .from("story_articles")
-        .select("story_id,article_id,articles(id,title,link,feeds(source_name))")
+        .select("story_id,article_id,articles(id,title,link,published_at,feeds(source_name))")
         .in("story_id", ids),
       supabase
         .from("story_entities")
@@ -175,6 +178,7 @@ export default async function AdminGenreReviewPage({
         id: string;
         title: string;
         link: string | null;
+        published_at: string | null;
         feeds:
           | { source_name: string | null }
           | { source_name: string | null }[]
@@ -187,6 +191,7 @@ export default async function AdminGenreReviewPage({
         title: a.title,
         link: a.link,
         source_name: feed?.source_name ?? null,
+        published_at: a.published_at ?? null,
       });
       sourcesByStory.set(storyId, list);
     }
@@ -236,7 +241,7 @@ export default async function AdminGenreReviewPage({
     for (const ids of chunk([...new Set(missingPrimary)], 40)) {
       const { data: articles, error } = await supabase
         .from("articles")
-        .select("id,title,link,feeds(source_name)")
+        .select("id,title,link,published_at,feeds(source_name)")
         .in("id", ids);
       if (error) throw new Error(`Failed to load articles: ${error.message}`);
       const byId = new Map(
@@ -251,6 +256,7 @@ export default async function AdminGenreReviewPage({
               source_name:
                 (feed as { source_name: string | null } | null)?.source_name ??
                 null,
+              published_at: (a.published_at as string | null) ?? null,
             } satisfies ReviewSource,
           ];
         }),
@@ -272,6 +278,7 @@ export default async function AdminGenreReviewPage({
 
   const reviewStories: ReviewStory[] = drafts.map((row) => {
     const articleIds = articleIdsByStory.get(row.id) ?? [row.article_id];
+    const sources = sourcesByStory.get(row.id) ?? [];
     return {
       id: row.id,
       article_id: row.article_id,
@@ -282,9 +289,13 @@ export default async function AdminGenreReviewPage({
       key_points: parseKeyPoints(row.arc_key_points),
       report: parseReport(row.arc_report),
       verification: parseVerification(row.verification),
-      sources: sourcesByStory.get(row.id) ?? [],
+      sources,
       entities: entitiesByStory.get(row.id) ?? [],
       events: eventsByStory.get(row.id) ?? [],
+      published_at: row.published_at,
+      newest_source_at: newestSourcePublishedAt(
+        sources.map((s) => s.published_at),
+      ),
     };
   });
 

@@ -18,6 +18,7 @@ export default async function AdminReviewIndexPage() {
     .from("stories")
     .select("id,category")
     .eq("is_live", false)
+    .is("archived_at", null)
     .limit(500);
 
   if (error) {

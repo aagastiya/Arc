@@ -5,6 +5,7 @@ const LINKS = [
   { href: "/admin/edition", label: "Edition" },
   { href: "/admin/review", label: "Review" },
   { href: "/admin/entities", label: "Entities" },
+  { href: "/admin/sources", label: "Sources" },
 ] as const;
 
 export function AdminNav({ current }: { current: string }) {

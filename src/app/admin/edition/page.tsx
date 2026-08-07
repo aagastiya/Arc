@@ -22,6 +22,7 @@ import {
   isInEditionDay,
   previousEditionDayStart,
 } from "@/lib/edition";
+import { newestSourcePublishedAt } from "@/lib/story-dates";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -42,13 +43,18 @@ type EditionStoryRow = {
 
 const BUCKETS: StoryCategoryBucket[] = [...CANONICAL_CATEGORY_ORDER, "Other"];
 
-function toRowStory(row: EditionStoryRow): EditionRowStory {
+function toRowStory(
+  row: EditionStoryRow,
+  newestSourceAt: string | null,
+): EditionRowStory {
   return {
     id: row.id,
     headline: row.arc_headline,
     importance: clampImportance(row.importance ?? 3),
     is_section_hero: Boolean(row.is_section_hero),
     carried_over: row.carried_over_at !== null,
+    published_at: row.published_at,
+    newest_source_at: newestSourceAt,
   };
 }
 
@@ -86,12 +92,50 @@ function Warning({ text, tone }: { text: string; tone: "amber" | "zinc" }) {
   );
 }
 
+async function loadNewestSources(
+  storyIds: string[],
+): Promise<Map<string, string | null>> {
+  const map = new Map<string, string | null>();
+  if (storyIds.length === 0) return map;
+
+  const supabase = createAdminClient();
+  const datesByStory = new Map<string, Array<string | null>>();
+
+  for (let i = 0; i < storyIds.length; i += 40) {
+    const ids = storyIds.slice(i, i + 40);
+    const { data, error } = await supabase
+      .from("story_articles")
+      .select("story_id,articles(published_at)")
+      .in("story_id", ids);
+    if (error) throw new Error(`Failed to load sources: ${error.message}`);
+
+    for (const row of data ?? []) {
+      const storyId = row.story_id as string;
+      const article = Array.isArray(row.articles) ? row.articles[0] : row.articles;
+      const published =
+        article && typeof article === "object"
+          ? ((article as { published_at?: string | null }).published_at ?? null)
+          : null;
+      const list = datesByStory.get(storyId) ?? [];
+      list.push(published);
+      datesByStory.set(storyId, list);
+    }
+  }
+
+  for (const id of storyIds) {
+    map.set(id, newestSourcePublishedAt(datesByStory.get(id) ?? []));
+  }
+  return map;
+}
+
 function CategoryBlock({
   label,
   rows,
+  newestByStory,
 }: {
   label: StoryCategoryBucket;
   rows: EditionStoryRow[];
+  newestByStory: Map<string, string | null>;
 }) {
   const ordered = inReaderOrder(rows);
   const heroCount = rows.filter((row) => row.is_section_hero).length;
@@ -132,7 +176,10 @@ function CategoryBlock({
       ) : (
         <ul>
           {ordered.map((row) => (
-            <EditionRow key={row.id} story={toRowStory(row)} />
+            <EditionRow
+              key={row.id}
+              story={toRowStory(row, newestByStory.get(row.id) ?? null)}
+            />
           ))}
         </ul>
       )}
@@ -150,6 +197,7 @@ export default async function AdminEditionPage() {
     .from("stories")
     .select(EDITION_SELECT)
     .eq("is_live", true)
+    .is("archived_at", null)
     .or(editionDayFilter(dayStart))
     .order("importance", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
@@ -162,6 +210,7 @@ export default async function AdminEditionPage() {
     .from("stories")
     .select(EDITION_SELECT)
     .eq("is_live", true)
+    .is("archived_at", null)
     .or(editionDayFilter(previousStart))
     .order("created_at", { ascending: false });
 
@@ -173,6 +222,11 @@ export default async function AdminEditionPage() {
   const yesterdayRows = ((previousData ?? []) as EditionStoryRow[]).filter(
     (row) => !isInEditionDay(row, dayStart),
   );
+
+  const newestByStory = await loadNewestSources([
+    ...todayRows.map((r) => r.id),
+    ...yesterdayRows.map((r) => r.id),
+  ]);
 
   const grouped = groupByBucket(todayRows);
   const visibleBuckets = BUCKETS.filter(
@@ -222,6 +276,7 @@ export default async function AdminEditionPage() {
               key={bucket}
               label={bucket}
               rows={grouped.get(bucket) ?? []}
+              newestByStory={newestByStory}
             />
           ))}
         </div>
@@ -245,7 +300,12 @@ export default async function AdminEditionPage() {
                 {yesterdayRows.map((row) => (
                   <CarryOverRow
                     key={row.id}
-                    story={{ id: row.id, headline: row.arc_headline }}
+                    story={{
+                      id: row.id,
+                      headline: row.arc_headline,
+                      published_at: row.published_at,
+                      newest_source_at: newestByStory.get(row.id) ?? null,
+                    }}
                     categoryLabel={normalizeStoryCategory(row.category)}
                   />
                 ))}

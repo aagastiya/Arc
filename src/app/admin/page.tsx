@@ -19,6 +19,7 @@ type StoryRow = {
   article_id: string;
   is_live: boolean;
   arc_headline: string;
+  published_at: string | null;
 };
 
 export default async function AdminPage() {
@@ -41,8 +42,9 @@ export default async function AdminPage() {
   if (articleIds.length > 0) {
     const { data: stories, error: storiesError } = await supabase
       .from("stories")
-      .select("id,article_id,is_live,arc_headline")
-      .in("article_id", articleIds);
+      .select("id,article_id,is_live,arc_headline,published_at")
+      .in("article_id", articleIds)
+      .is("archived_at", null);
 
     if (storiesError) {
       throw new Error(`Failed to load stories: ${storiesError.message}`);

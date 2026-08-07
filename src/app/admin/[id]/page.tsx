@@ -1,8 +1,10 @@
 import Link from "next/link";
 
+import { ArchiveDraftButton } from "./archive-button";
 import { clampImportance, IMPORTANCE_DEFAULT } from "@/lib/edition";
-import { formatRelativeTime } from "@/lib/time";
+import { newestSourcePublishedAt } from "@/lib/story-dates";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { AdminStoryDates } from "@/components/admin-story-dates";
 
 import { EditForm } from "./edit-form";
 import { AdminGraphPanel } from "./graph-panel";
@@ -43,7 +45,7 @@ export default async function StoryEditorPage({
     const { data: story, error: storyError } = await supabase
       .from("stories")
       .select(
-        "id,article_id,arc_headline,arc_summary,arc_storyline,clip_url,cover_image_url,is_live,is_section_hero,importance,category,verification",
+        "id,article_id,arc_headline,arc_summary,arc_storyline,clip_url,cover_image_url,is_live,is_section_hero,importance,category,verification,published_at,archived_at",
       )
       .eq("id", id)
       .single();
@@ -84,6 +86,28 @@ export default async function StoryEditorPage({
           ? (article.feeds[0] as { source_name?: string | null } | undefined)?.source_name
           : null;
 
+    const { data: linkedArticles, error: linkedErr } = await supabase
+      .from("story_articles")
+      .select("articles(published_at)")
+      .eq("story_id", story.id);
+
+    if (linkedErr) {
+      throw new Error(`Failed to load story sources: ${linkedErr.message}`);
+    }
+
+    const sourceDates: Array<string | null> = [
+      article.published_at as string | null,
+    ];
+    for (const row of linkedArticles ?? []) {
+      const a = Array.isArray(row.articles) ? row.articles[0] : row.articles;
+      if (a && typeof a === "object") {
+        sourceDates.push(
+          (a as { published_at?: string | null }).published_at ?? null,
+        );
+      }
+    }
+    const newestSourceAt = newestSourcePublishedAt(sourceDates);
+
     return (
       <main className="min-h-screen bg-[var(--background)] px-6 py-10 text-zinc-100 md:px-10">
         <div className="mx-auto w-full max-w-7xl">
@@ -99,9 +123,13 @@ export default async function StoryEditorPage({
                 {sourceName ?? "Unknown source"}
                 <span className="mx-2 text-zinc-600">•</span>
                 {article.category ?? "uncategorized"}
-                <span className="mx-2 text-zinc-600">•</span>
-                {formatRelativeTime(article.published_at) || "Unknown"}
               </p>
+              <AdminStoryDates
+                className="mt-2"
+                newestSourceAt={newestSourceAt}
+                publishedAt={(story.published_at as string | null) ?? null}
+                isDraft={!story.is_live}
+              />
               <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-zinc-300">
                 {article.summary || "No summary available."}
               </p>
@@ -120,8 +148,19 @@ export default async function StoryEditorPage({
               <p className="mt-1 text-sm text-zinc-400">
                 Category: {story.category ?? "uncategorized"}
                 <span className="mx-2 text-zinc-600">•</span>
-                Status: {story.is_live ? "Live" : "Draft"}
+                Status:{" "}
+                {story.archived_at
+                  ? "Archived"
+                  : story.is_live
+                    ? "Live"
+                    : "Draft"}
               </p>
+              <AdminStoryDates
+                className="mt-2"
+                newestSourceAt={newestSourceAt}
+                publishedAt={(story.published_at as string | null) ?? null}
+                isDraft={!story.is_live}
+              />
               <div className="mt-4">
                 <EditForm
                   story={{
@@ -142,6 +181,9 @@ export default async function StoryEditorPage({
                   }}
                 />
               </div>
+              {!story.is_live && !story.archived_at ? (
+                <ArchiveDraftButton storyId={story.id} />
+              ) : null}
             </section>
           </div>
 

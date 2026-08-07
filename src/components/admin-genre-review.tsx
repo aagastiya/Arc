@@ -3,18 +3,21 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { AdminStoryDates } from "@/components/admin-story-dates";
 import type { Verification, VerificationFlag } from "@/lib/arc/verification";
 import {
   isFlaggedVerification,
   isPublishableVerification,
   isUnverified,
 } from "@/lib/arc/verification";
+import { isStaleSource } from "@/lib/story-dates";
 
 export type ReviewSource = {
   id: string;
   title: string;
   link: string | null;
   source_name: string | null;
+  published_at: string | null;
 };
 
 export type ReviewEntity = {
@@ -54,6 +57,8 @@ export type ReviewStory = {
   sources: ReviewSource[];
   entities: ReviewEntity[];
   events: ReviewEvent[];
+  published_at: string | null;
+  newest_source_at: string | null;
 };
 
 type PublishResult =
@@ -112,24 +117,29 @@ function StoryCard({
   included,
   regenerating,
   verifying,
+  archiving,
   onToggleExpand,
   onToggleInclude,
   onRegenerate,
   onVerify,
+  onArchive,
 }: {
   story: ReviewStory;
   expanded: boolean;
   included: boolean;
   regenerating: boolean;
   verifying: boolean;
+  archiving: boolean;
   onToggleExpand: () => void;
   onToggleInclude: () => void;
   onRegenerate: () => void;
   onVerify: () => void;
+  onArchive: () => void;
 }) {
   const flagged = isFlaggedVerification(story.verification);
   const unverified = isUnverified(story.verification);
   const blocked = !isPublishableVerification(story.verification);
+  const stale = isStaleSource(story.newest_source_at);
   const event = story.events[0] ?? null;
 
   return (
@@ -156,7 +166,9 @@ function StoryCard({
                 ? "Unverified stories cannot be included until verified"
                 : included
                   ? "Exclude from this publish"
-                  : "Include in this publish"
+                  : stale
+                    ? "Include carry-over (sources are stale)"
+                    : "Include in this publish"
           }
           aria-pressed={included}
           aria-label={included ? "Exclude story" : "Include story"}
@@ -177,6 +189,11 @@ function StoryCard({
         >
           <div className="flex flex-wrap items-center gap-2">
             <VerificationBadge verification={story.verification} />
+            {stale ? (
+              <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-300">
+                Stale
+              </span>
+            ) : null}
             <span className="text-[11px] text-zinc-500">
               Importance {story.importance}/5
             </span>
@@ -200,6 +217,12 @@ function StoryCard({
           <p className="mt-1.5 text-[15px] leading-relaxed text-zinc-400">
             {story.standfirst}
           </p>
+          <AdminStoryDates
+            className="mt-2"
+            newestSourceAt={story.newest_source_at}
+            publishedAt={story.published_at}
+            isDraft
+          />
           <p className="mt-2 text-[11px] uppercase tracking-wider text-zinc-600">
             {expanded ? "Collapse" : "Read full story"}
           </p>
@@ -357,6 +380,23 @@ function StoryCard({
                 </button>
               </div>
             ) : null}
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={onArchive}
+                disabled={archiving}
+                className="rounded-full border border-zinc-700 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200 disabled:opacity-50"
+              >
+                {archiving ? "Archiving…" : "Archive"}
+              </button>
+              {stale ? (
+                <p className="text-xs text-amber-200/80">
+                  Sources older than 72h start excluded — include only for
+                  deliberate carry-over.
+                </p>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
@@ -383,12 +423,14 @@ export function AdminGenreReview({
     Object.fromEntries(
       initialStories.map((s) => [
         s.id,
-        isPublishableVerification(s.verification),
+        isPublishableVerification(s.verification) &&
+          !isStaleSource(s.newest_source_at),
       ]),
     ),
   );
   const [regenerating, setRegenerating] = useState<Record<string, boolean>>({});
   const [verifying, setVerifying] = useState<Record<string, boolean>>({});
+  const [archiving, setArchiving] = useState<Record<string, boolean>>({});
   const [confirming, setConfirming] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -437,7 +479,9 @@ export function AdminGenreReview({
         );
       }
       const verification = data.verification ?? null;
-      const clean = isPublishableVerification(verification);
+      const clean =
+        isPublishableVerification(verification) &&
+        !isStaleSource(story.newest_source_at);
 
       setStories((prev) =>
         prev.map((s) => (s.id === story.id ? { ...s, verification } : s)),
@@ -500,7 +544,9 @@ export function AdminGenreReview({
 
       const saved = data.saved_story;
       const verification = data.verification ?? saved?.verification ?? null;
-      const clean = isPublishableVerification(verification);
+      const clean =
+        isPublishableVerification(verification) &&
+        !isStaleSource(story.newest_source_at);
 
       setStories((prev) =>
         prev.map((s) => {
@@ -556,6 +602,33 @@ export function AdminGenreReview({
       setPublishError(err instanceof Error ? err.message : "Regenerate failed");
     } finally {
       setRegenerating((prev) => ({ ...prev, [story.id]: false }));
+    }
+  };
+
+  const archiveStory = async (story: ReviewStory) => {
+    setArchiving((prev) => ({ ...prev, [story.id]: true }));
+    setPublishError(null);
+    try {
+      const res = await fetch(
+        `/api/admin/stories/${encodeURIComponent(story.id)}/archive`,
+        { method: "POST", credentials: "same-origin" },
+      );
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(
+          typeof data.error === "string" ? data.error : "Archive failed",
+        );
+      }
+      setStories((prev) => prev.filter((s) => s.id !== story.id));
+      setIncluded((prev) => {
+        const next = { ...prev };
+        delete next[story.id];
+        return next;
+      });
+    } catch (err: unknown) {
+      setPublishError(err instanceof Error ? err.message : "Archive failed");
+    } finally {
+      setArchiving((prev) => ({ ...prev, [story.id]: false }));
     }
   };
 
@@ -657,6 +730,7 @@ export function AdminGenreReview({
               }
               regenerating={Boolean(regenerating[story.id])}
               verifying={Boolean(verifying[story.id])}
+              archiving={Boolean(archiving[story.id])}
               onToggleExpand={() =>
                 setExpanded((prev) => ({
                   ...prev,
@@ -666,6 +740,7 @@ export function AdminGenreReview({
               onToggleInclude={() => toggleInclude(story)}
               onRegenerate={() => void regenerate(story)}
               onVerify={() => void verifyNow(story)}
+              onArchive={() => void archiveStory(story)}
             />
           ))}
         </div>

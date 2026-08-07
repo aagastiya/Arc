@@ -68,7 +68,7 @@ export async function GET(request: Request) {
 
   const { data: stories, error: storiesErr } = await admin
     .from("stories")
-    .select("id,article_id,is_live,arc_headline")
+    .select("id,article_id,is_live,arc_headline,published_at")
     .in("article_id", articleIds);
 
   if (storiesErr) {

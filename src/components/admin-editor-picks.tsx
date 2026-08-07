@@ -2,16 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { AdminStoryDates } from "@/components/admin-story-dates";
 import {
   CANONICAL_CATEGORY_ORDER,
   normalizeStoryCategory,
   type StoryCategoryBucket,
 } from "@/lib/categories";
+import { newestSourcePublishedAt } from "@/lib/story-dates";
 
 type ClusterArticle = {
   id: string;
   title: string;
   source_name: string;
+  published_at?: string | null;
 };
 
 type ExistingStory = {
@@ -263,6 +266,14 @@ function ClusterCard({
               {suggestedEventLabel(cluster)}
             </span>
           </div>
+          <AdminStoryDates
+            className="mt-2"
+            newestSourceAt={newestSourcePublishedAt(
+              cluster.articles.map((a) => a.published_at ?? null),
+            )}
+            publishedAt={null}
+            isDraft
+          />
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-2">

@@ -153,7 +153,12 @@ type ClusterOut = {
   category: StoryCategoryBucket;
   article_ids: string[];
   suggested_event: string;
-  articles: Array<{ id: string; title: string; source_name: string }>;
+  articles: Array<{
+    id: string;
+    title: string;
+    source_name: string;
+    published_at: string | null;
+  }>;
   matched_event: { id: string; title: string } | null;
   proposed_event_title: string | null;
   existing_story: ExistingStory | null;
@@ -276,6 +281,7 @@ function parseClusters(
         id: a.id,
         title: a.title,
         source_name: a.sourceName,
+        published_at: a.published_at,
       })),
       matched_event: matchedEvent,
       proposed_event_title: proposedTitle,
@@ -318,6 +324,7 @@ async function loadExistingStories(
     .from("stories")
     .select("id,arc_headline,importance,verification,created_at")
     .in("id", storyIds)
+    .is("archived_at", null)
     .order("created_at", { ascending: false });
 
   if (storyErr || !stories) {

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { formatRelativeTime } from "@/lib/time";
+import { AdminStoryDates } from "@/components/admin-story-dates";
 
 export type AdminArticleRow = {
   id: string;
@@ -19,6 +19,7 @@ export type AdminStoryRow = {
   article_id: string;
   is_live: boolean;
   arc_headline: string;
+  published_at: string | null;
 };
 
 type Props = {
@@ -200,7 +201,7 @@ export function AdminSearchList({ articles, storiesByArticleId }: Props) {
             <tr>
               <th className="px-4 py-3">Article</th>
               <th className="px-4 py-3">Source / Category</th>
-              <th className="px-4 py-3">Published</th>
+              <th className="px-4 py-3">Dates</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Action</th>
             </tr>
@@ -224,7 +225,6 @@ export function AdminSearchList({ articles, storiesByArticleId }: Props) {
                 const status = getStatus(story);
                 const sourceName = article.feeds?.source_name ?? "Unknown source";
                 const category = article.category ?? "uncategorized";
-                const published = formatRelativeTime(article.published_at) || "Unknown";
 
                 return (
                   <tr key={article.id} className="align-top hover:bg-zinc-900/50">
@@ -245,7 +245,13 @@ export function AdminSearchList({ articles, storiesByArticleId }: Props) {
                       <span className="mx-2 text-zinc-600">•</span>
                       <span className="capitalize">{category}</span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-zinc-400">{published}</td>
+                    <td className="px-4 py-3">
+                      <AdminStoryDates
+                        newestSourceAt={article.published_at}
+                        publishedAt={story?.published_at ?? null}
+                        isDraft={Boolean(story) && !story.is_live}
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex rounded-full border px-2 py-1 text-xs font-medium ${status.className}`}
