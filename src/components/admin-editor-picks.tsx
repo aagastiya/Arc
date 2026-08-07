@@ -30,6 +30,7 @@ type Cluster = {
   importance: number;
   category?: string;
   article_ids: string[];
+  source_count?: number;
   suggested_event: string;
   articles: ClusterArticle[];
   matched_event: { id: string; title: string } | null;
@@ -151,7 +152,12 @@ function groupByCategory(
     bucket,
     clusters: keyed
       .filter((cluster) => normalizeStoryCategory(cluster.category ?? "") === bucket)
-      .sort((a, b) => b.importance - a.importance),
+      .sort((a, b) => {
+        if (b.importance !== a.importance) return b.importance - a.importance;
+        const aSources = a.source_count ?? a.article_ids.length;
+        const bSources = b.source_count ?? b.article_ids.length;
+        return bSources - aSources;
+      }),
   })).filter((group) => group.clusters.length > 0);
 }
 
@@ -239,6 +245,15 @@ function ClusterCard({
             <span className="rounded border border-[#c8ff00]/30 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[#c8ff00]/80">
               {normalizeStoryCategory(cluster.category ?? "")}
             </span>
+            {(cluster.source_count ?? cluster.article_ids.length) === 1 ? (
+              <span className="rounded border border-zinc-800 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-600">
+                1 source
+              </span>
+            ) : (
+              <span className="rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                {cluster.source_count ?? cluster.article_ids.length} sources
+              </span>
+            )}
             <h3
               className={`font-medium ${done ? "text-zinc-400" : "text-zinc-100"}`}
             >
@@ -296,8 +311,10 @@ function ClusterCard({
             </button>
           )}
           <span className="text-[11px] text-zinc-500">
-            {cluster.article_ids.length}{" "}
-            {cluster.article_ids.length === 1 ? "source" : "sources"}
+            {cluster.source_count ?? cluster.article_ids.length}{" "}
+            {(cluster.source_count ?? cluster.article_ids.length) === 1
+              ? "source"
+              : "sources"}
           </span>
         </div>
       </div>
@@ -403,7 +420,7 @@ export function AdminEditorPicks() {
   const handleGenerate = async (cluster: KeyedCluster) => {
     setStates((prev) => ({ ...prev, [cluster.key]: { status: "generating" } }));
     try {
-      const ids = cluster.article_ids.slice(0, 5).join(",");
+      const ids = cluster.article_ids.slice(0, 14).join(",");
       const res = await fetch(
         `/api/arc/generate?id=${encodeURIComponent(ids)}&importance=${cluster.importance}`,
         { method: "POST", credentials: "same-origin" },

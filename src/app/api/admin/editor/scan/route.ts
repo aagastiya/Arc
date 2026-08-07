@@ -14,6 +14,14 @@ import {
   normalizeStoryCategory,
   type StoryCategoryBucket,
 } from "@/lib/categories";
+import {
+  clusterSizeDistribution,
+  consolidateByDenseKeywords,
+  selectOverlapPreserving,
+  significantTitleKeywords,
+  splitIncoherentGroup,
+  unusedMultiOutletCohorts,
+} from "@/lib/arc/scan-candidates";
 import { isLiveblogItem } from "@/lib/rss/sync-feeds";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -23,11 +31,13 @@ export const maxDuration = 60;
 const PRIMARY_WINDOW_HOURS = 24;
 const FALLBACK_WINDOW_HOURS = 48;
 const MIN_ARTICLES_FOR_PRIMARY_WINDOW = 20;
-const MAX_ARTICLES_PER_CATEGORY = 120;
-const MAX_SUMMARY_CHARS = 240;
-const TARGET_CLUSTERS_PER_CATEGORY = 8;
-const MAX_CLUSTERS_PER_CATEGORY = 15;
-const MAX_ARTICLES_PER_CLUSTER = 5;
+/** Raised so heavy multi-outlet days keep shared-story groups in budget. */
+const MAX_ARTICLES_PER_CATEGORY = 160;
+const MAX_SUMMARY_CHARS = 220;
+const TARGET_CLUSTERS_PER_CATEGORY = 10;
+const MAX_CLUSTERS_PER_CATEGORY = 18;
+/** Cap per cluster — enough for heavy coverage without flooding generation. */
+const MAX_ARTICLES_PER_CLUSTER = 14;
 
 const SCAN_BUCKETS: StoryCategoryBucket[] = [...CANONICAL_CATEGORY_ORDER, "Other"];
 
@@ -49,16 +59,22 @@ Return ONLY valid JSON (no markdown, no prose) in this exact shape:
 
 Cluster purity:
 - An article joins a cluster ONLY if it covers the same underlying event as the rest of the cluster.
-- The same event reported by several outlets DOES belong together, even when the headlines differ in wording, angle, or which detail they lead on. A reaction piece, an analysis of that same event, and the news report of it are one cluster.
+- MERGE BIAS (same event, different headlines): The SAME event reported with different headlines, angles, or lead details across outlets MUST be one cluster. Put every outlet covering that event in the same article_ids list.
+  Example 1 — ONE cluster: "Trump denies munitions shortage" (NPR) + "Pentagon stockpile scrutiny grows" (Politico) + "White House pushes back on arms claims" (The Hill). Same underlying dispute about US munitions stocks.
+  Example 2 — ONE cluster: "Fauci faces congressional grilling over pandemic emails" (NBC) + "Lawmakers press Fauci on lab-leak answers" (Washington Post). Same hearing / same day of testimony.
+  Example 3 — TWO clusters (keep separate): "OpenAI launches new model" + "Anthropic raises Series E". Same industry, different events.
+- Name collisions are NOT the same event. "Chuck Todd" is not "Todd Blanche". A shared surname or first name never merges stories.
+- Digest / pulse / roundup items that name multiple unrelated topics in one title belong in no cluster — drop them.
 - Being adjacent in topic, region, theme, or industry is NOT the same event. Two different films, two different companies, two different votes, two different countries' elections are separate stories.
 - Never cluster photo galleries, "photos of the day", picture roundups, roundups, digests, or daily-briefing items with anything. Drop them.
-- NEVER merge genuinely different stories to fill out a cluster. A bigger cluster is not a better cluster.
+- NEVER merge genuinely different stories to fill out a cluster. A bigger cluster is not a better cluster — but under-merging one event into several single-outlet clusters is also wrong.
 - A market-sentiment column, review, or opinion piece is never part of a news cluster. Give it its own cluster or drop it.
 - A cluster is ONE event. If the only label that fits a group is a category rather than an event — "New films and trailers", "Emerging trends in media", "Market movers", "AI news" — it is not a cluster. Split it into the real stories or drop it.
-- Each cluster holds 1 to 5 article ids. Use only ids present in the input. Never invent ids.
+- Each cluster holds 1 to ${MAX_ARTICLES_PER_CLUSTER} article ids. Prefer including every outlet that covers the event (up to the cap). Use only ids present in the input. Never invent ids.
 
 Coverage (a separate concern from purity — do not trade one for the other):
-- Single-article clusters are fine and expected. A story covered by only one outlet is still a story and still belongs in the list.
+- Single-article clusters are fine when only one outlet covered the story. Do not invent siblings.
+- When several outlets clearly cover the same event, returning them as separate 1-article clusters is a failure — merge them.
 - Every input article is a candidate. Work through the whole list to the last entry, not just the first few.
 - Return ${TARGET_CLUSTERS_PER_CATEGORY} to ${MAX_CLUSTERS_PER_CATEGORY} clusters. If the section has 30 or more articles it has at least ${TARGET_CLUSTERS_PER_CATEGORY} distinct stories in it — find them. Returning fewer is only correct when the section truly has fewer separate stories.
 - A smaller story is not a reason to leave it out; give it a low importance instead.
@@ -68,7 +84,7 @@ Coverage (a separate concern from purity — do not trade one for the other):
 Ranking:
 - importance is 1-5 where 5 = major national or global significance, 1 = minor. Rank by real-world consequence, not virality or headline drama.
 - Judge importance within this section: a 5 in Culture is the biggest story in culture, not a story that rivals a war.
-- Order clusters by importance descending.
+- Order clusters by importance descending. When two clusters share an importance score, put the one with more outlets first.
 - Skip sports scores, celebrity gossip, product deals, discounts, reviews, and listicles entirely.
 
 Event matching:
@@ -137,6 +153,11 @@ type ScanArticle = {
   published_at: string | null;
 };
 
+type BucketLoad = {
+  candidatesInWindow: number;
+  articles: ScanArticle[];
+};
+
 /** A story already drafted from a cluster's articles, so it is never drafted twice. */
 type ExistingStory = {
   id: string;
@@ -152,6 +173,7 @@ type ClusterOut = {
   importance: number;
   category: StoryCategoryBucket;
   article_ids: string[];
+  source_count: number;
   suggested_event: string;
   articles: Array<{
     id: string;
@@ -269,28 +291,43 @@ function parseClusters(
     }
 
     const members = validIds.map((id) => byId.get(id)!);
+    const coherentGroups = splitIncoherentGroup(members).sort(
+      (a, b) => b.length - a.length,
+    );
 
-    clusters.push({
-      topic,
-      why_it_matters: whyItMatters,
-      importance,
-      category: bucket,
-      article_ids: validIds,
-      suggested_event: suggested,
-      articles: members.map((a) => ({
-        id: a.id,
-        title: a.title,
-        source_name: a.sourceName,
-        published_at: a.published_at,
-      })),
-      matched_event: matchedEvent,
-      proposed_event_title: proposedTitle,
-      existing_story: null,
-    });
+    for (let gi = 0; gi < coherentGroups.length; gi++) {
+      const group = coherentGroups[gi]!;
+      const groupIds = group.map((a) => a.id);
+      // Primary subgroup keeps the model topic; splinters get a title label.
+      const groupTopic =
+        gi === 0 ? topic : compact(group[0]!.title, 80);
+      clusters.push({
+        topic: groupTopic,
+        why_it_matters: whyItMatters,
+        importance,
+        category: bucket,
+        article_ids: groupIds,
+        source_count: groupIds.length,
+        suggested_event: suggested,
+        articles: group.map((a) => ({
+          id: a.id,
+          title: a.title,
+          source_name: a.sourceName,
+          published_at: a.published_at,
+        })),
+        matched_event: matchedEvent,
+        proposed_event_title: proposedTitle,
+        existing_story: null,
+      });
+    }
   }
 
   return clusters
-    .sort((a, b) => b.importance - a.importance)
+    .sort((a, b) => {
+      if (b.importance !== a.importance) return b.importance - a.importance;
+      // Multi-source coverage outranks single-outlet at equal importance.
+      return b.source_count - a.source_count;
+    })
     .slice(0, MAX_CLUSTERS_PER_CATEGORY);
 }
 
@@ -387,7 +424,7 @@ async function scanCategory(
       { role: "system", content: EDITOR_SCAN_PROMPT },
       { role: "user", content: userMessage },
     ],
-    temperature: 0.4,
+    temperature: 0.3,
     response_format: { type: "json_object" },
   });
 
@@ -403,7 +440,146 @@ async function scanCategory(
     throw new Error(`${bucket}: OpenAI returned invalid JSON`);
   }
 
-  return parseClusters(parsed, bucket, byId, events);
+  const modelClusters = parseClusters(parsed, bucket, byId, events);
+  const consolidated = applyDenseKeywordConsolidation(
+    bucket,
+    articles,
+    modelClusters,
+  );
+  const minted = mintCohortClusters(bucket, articles, consolidated);
+  if (minted.length > 0) {
+    console.info(
+      `[editor/scan] ${bucket}: minted ${minted.length} unused multi-outlet cohort(s)`,
+      minted.map((c) => `${c.topic.slice(0, 40)}… (${c.source_count})`),
+    );
+  }
+  const combined = [...consolidated, ...minted].sort((a, b) => {
+    if (b.importance !== a.importance) return b.importance - a.importance;
+    return b.source_count - a.source_count;
+  });
+  return combined.slice(0, MAX_CLUSTERS_PER_CATEGORY);
+}
+
+function applyDenseKeywordConsolidation(
+  bucket: StoryCategoryBucket,
+  articles: ScanArticle[],
+  clusters: ClusterOut[],
+): ClusterOut[] {
+  const merges = consolidateByDenseKeywords(articles, clusters, {
+    minSize: 3,
+    maxPerCluster: MAX_ARTICLES_PER_CLUSTER,
+  });
+  if (merges.length === 0) return clusters;
+
+  const absorb = new Set(
+    merges.flatMap((m) => m.groups.flatMap((g) => g.map((a) => a.id))),
+  );
+  // Drop absorbed ids from existing clusters; keep remnant clusters intact.
+  const kept: ClusterOut[] = [];
+  for (const c of clusters) {
+    const remaining = c.article_ids.filter((id) => !absorb.has(id));
+    if (remaining.length === 0) continue;
+    if (remaining.length === c.article_ids.length) {
+      kept.push(c);
+      continue;
+    }
+    const byId = new Map(c.articles.map((a) => [a.id, a]));
+    const remArticles = remaining.map((id) => byId.get(id)!).filter(Boolean);
+    kept.push({
+      ...c,
+      article_ids: remaining,
+      source_count: remaining.length,
+      articles: remArticles,
+    });
+  }
+
+  const built: ClusterOut[] = [];
+  for (const m of merges) {
+    for (const members of m.groups) {
+      built.push({
+        topic: compact(
+          members.length >= 4 ? m.seedTopic : members[0]!.title,
+          80,
+        ),
+        why_it_matters: `${members.length} outlets reported on this ${m.keyword} story in the scan window.`,
+        importance: m.importance,
+        category: bucket,
+        article_ids: members.map((a) => a.id),
+        source_count: members.length,
+        suggested_event: "none",
+        articles: members.map((a) => ({
+          id: a.id,
+          title: a.title,
+          source_name: a.sourceName,
+          published_at: a.published_at,
+        })),
+        matched_event: null,
+        proposed_event_title: null,
+        existing_story: null,
+      });
+    }
+  }
+
+  console.info(
+    `[editor/scan] ${bucket}: consolidated ${built.length} dense keyword group(s)`,
+    built.map((c) => `${c.topic.slice(0, 40)}… (${c.source_count})`),
+  );
+
+  return [...built, ...kept];
+}
+
+function mintCohortClusters(
+  bucket: StoryCategoryBucket,
+  articles: ScanArticle[],
+  existing: ClusterOut[],
+): ClusterOut[] {
+  const used = new Set(existing.flatMap((c) => c.article_ids));
+  const cohorts = unusedMultiOutletCohorts(articles, used, 3);
+  const minted: ClusterOut[] = [];
+
+  for (const cohort of cohorts) {
+    if (minted.length >= 6) break;
+    const capped = cohort.slice(0, MAX_ARTICLES_PER_CLUSTER);
+    // Skip weakly distinctive cohorts (generic shared verbs/nouns).
+    const shared = significantSharedKeyword(capped);
+    if (!shared) continue;
+    const topic = compact(capped[0]!.title, 80);
+    minted.push({
+      topic,
+      why_it_matters: `${capped.length} outlets reported on this ${shared} story in the scan window.`,
+      importance: Math.min(5, Math.max(3, Math.round(capped.length / 2))),
+      category: bucket,
+      article_ids: capped.map((a) => a.id),
+      source_count: capped.length,
+      suggested_event: "none",
+      articles: capped.map((a) => ({
+        id: a.id,
+        title: a.title,
+        source_name: a.sourceName,
+        published_at: a.published_at,
+      })),
+      matched_event: null,
+      proposed_event_title: null,
+      existing_story: null,
+    });
+    for (const a of capped) used.add(a.id);
+  }
+
+  return minted;
+}
+
+/** Keyword that appears in every title of a cohort — empty if none. */
+function significantSharedKeyword(articles: ScanArticle[]): string | null {
+  if (articles.length === 0) return null;
+  const sets = articles.map(
+    (a) => new Set(significantTitleKeywords(a.title)),
+  );
+  const first = [...sets[0]!];
+  const shared = first.filter((kw) => sets.every((s) => s.has(kw)));
+  if (shared.length === 0) return null;
+  // Prefer rarer / longer tokens.
+  shared.sort((a, b) => b.length - a.length || a.localeCompare(b));
+  return shared[0] ?? null;
 }
 
 export async function POST() {
@@ -455,7 +631,7 @@ export async function POST() {
     const loadBucket = async (
       bucket: StoryCategoryBucket,
       hours: number,
-    ): Promise<ScanArticle[]> => {
+    ): Promise<BucketLoad> => {
       const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
       const { data, error } = await supabase
         .from("articles")
@@ -464,28 +640,37 @@ export async function POST() {
         .in("category", bucketSlugs.get(bucket) ?? [])
         .gte("published_at", since)
         .order("published_at", { ascending: false, nullsFirst: false })
-        .limit(MAX_ARTICLES_PER_CATEGORY * 3);
+        .limit(MAX_ARTICLES_PER_CATEGORY * 5);
 
       if (error) {
         throw new Error(error.message);
       }
 
       // Liveblogs were skipped at sync time, but older rows predate that filter.
-      return ((data ?? []) as unknown as ArticleRow[])
-        .filter(
-          (row) =>
-            !isLiveblogItem(row.link ?? "", row.title ?? "") &&
-            !isNonStoryItem(row.title ?? ""),
-        )
-        .slice(0, MAX_ARTICLES_PER_CATEGORY)
-        .map((row) => ({
-          id: row.id,
-          title: compact(row.title ?? "", 160),
-          summary: compact(row.summary ?? "", MAX_SUMMARY_CHARS),
-          sourceName: sourceNameOf(row),
-          category: normalizeStoryCategory(row.category ?? ""),
-          published_at: row.published_at,
-        }));
+      const filtered = ((data ?? []) as unknown as ArticleRow[]).filter(
+        (row) =>
+          !isLiveblogItem(row.link ?? "", row.title ?? "") &&
+          !isNonStoryItem(row.title ?? ""),
+      );
+
+      const mapped: ScanArticle[] = filtered.map((row) => ({
+        id: row.id,
+        title: compact(row.title ?? "", 160),
+        summary: compact(row.summary ?? "", MAX_SUMMARY_CHARS),
+        sourceName: sourceNameOf(row),
+        category: normalizeStoryCategory(row.category ?? ""),
+        published_at: row.published_at,
+      }));
+
+      const selected = selectOverlapPreserving(
+        mapped,
+        MAX_ARTICLES_PER_CATEGORY,
+      );
+
+      return {
+        candidatesInWindow: mapped.length,
+        articles: selected,
+      };
     };
 
     const loadWindow = async (hours: number) =>
@@ -500,8 +685,8 @@ export async function POST() {
 
     let windowHours = PRIMARY_WINDOW_HOURS;
     let byBucket = await loadWindow(PRIMARY_WINDOW_HOURS);
-    const total = (map: Map<StoryCategoryBucket, ScanArticle[]>) =>
-      [...map.values()].reduce((sum, list) => sum + list.length, 0);
+    const total = (map: Map<StoryCategoryBucket, BucketLoad>) =>
+      [...map.values()].reduce((sum, load) => sum + load.articles.length, 0);
 
     if (total(byBucket) < MIN_ARTICLES_FOR_PRIMARY_WINDOW) {
       windowHours = FALLBACK_WINDOW_HOURS;
@@ -543,7 +728,7 @@ export async function POST() {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const active = buckets.filter(
-      (bucket) => (byBucket.get(bucket) ?? []).length > 0,
+      (bucket) => (byBucket.get(bucket)?.articles.length ?? 0) > 0,
     );
 
     // Sections run together; one failing section still leaves a usable list.
@@ -552,7 +737,7 @@ export async function POST() {
         scanCategory(
           openai,
           bucket,
-          byBucket.get(bucket) ?? [],
+          byBucket.get(bucket)?.articles ?? [],
           events,
           windowHours,
         ),
@@ -562,14 +747,18 @@ export async function POST() {
     const clusters: ClusterOut[] = [];
     const perCategory: Array<{
       category: StoryCategoryBucket;
-      articles: number;
+      candidates_in_window: number;
+      sent_to_model: number;
       clusters: number;
+      size_distribution: { one: number; two: number; three_plus: number };
     }> = [];
     const warnings: string[] = [];
 
     active.forEach((bucket, index) => {
       const result = settled[index]!;
       const found = result.status === "fulfilled" ? result.value : [];
+      const load = byBucket.get(bucket)!;
+      const dist = clusterSizeDistribution(found.map((c) => c.source_count));
 
       if (result.status === "rejected") {
         const message =
@@ -580,12 +769,28 @@ export async function POST() {
         warnings.push(message);
       }
 
+      console.log(
+        `[editor/scan] ${bucket}: candidates_in_window=${load.candidatesInWindow} sent_to_model=${load.articles.length} clusters=${found.length} sizes={1:${dist.one}, 2:${dist.two}, 3+:${dist.threePlus}}`,
+      );
+
       clusters.push(...found);
       perCategory.push({
         category: bucket,
-        articles: (byBucket.get(bucket) ?? []).length,
+        candidates_in_window: load.candidatesInWindow,
+        sent_to_model: load.articles.length,
         clusters: found.length,
+        size_distribution: {
+          one: dist.one,
+          two: dist.two,
+          three_plus: dist.threePlus,
+        },
       });
+    });
+
+    // Global rank: importance first, then multi-source over single-source.
+    clusters.sort((a, b) => {
+      if (b.importance !== a.importance) return b.importance - a.importance;
+      return b.source_count - a.source_count;
     });
 
     const existing = await loadExistingStories(
