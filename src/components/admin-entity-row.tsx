@@ -22,6 +22,14 @@ export type AdminEntity = {
   story_count: number;
 };
 
+function isUnanchored(entity: AdminEntity): boolean {
+  return (
+    entity.wikidata_id === null &&
+    (entity.description_source === "model" ||
+      entity.description_source === "source_text")
+  );
+}
+
 const SOURCE_STYLES: Record<string, string> = {
   human: "border-[#c8ff00]/50 bg-[#c8ff00]/10 text-[#c8ff00]",
   wikidata: "border-sky-500/40 bg-sky-500/10 text-sky-300",
@@ -50,11 +58,19 @@ function formatVerified(value: string | null): string {
   });
 }
 
-export function AdminEntityRow({ entity }: { entity: AdminEntity }) {
+export function AdminEntityRow({
+  entity,
+  showRecheck = false,
+}: {
+  entity: AdminEntity;
+  showRecheck?: boolean;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [rechecking, setRechecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusNote, setStatusNote] = useState<string | null>(null);
   const [name, setName] = useState(entity.name);
   const [roleTitle, setRoleTitle] = useState(entity.role_title);
   const [description, setDescription] = useState(entity.short_description);
@@ -62,6 +78,7 @@ export function AdminEntityRow({ entity }: { entity: AdminEntity }) {
   const save = async () => {
     setSaving(true);
     setError(null);
+    setStatusNote(null);
     try {
       const res = await fetch(
         `/api/admin/entities/${encodeURIComponent(entity.id)}`,
@@ -91,6 +108,47 @@ export function AdminEntityRow({ entity }: { entity: AdminEntity }) {
     }
   };
 
+  const recheck = async () => {
+    setRechecking(true);
+    setError(null);
+    setStatusNote(null);
+    try {
+      const res = await fetch(
+        `/api/admin/entities/${encodeURIComponent(entity.id)}/anchor`,
+        { method: "POST", credentials: "same-origin" },
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        status?: string;
+        wikidata_label?: string;
+        candidates?: EntityCandidate[];
+      };
+      if (!res.ok) {
+        throw new Error(
+          typeof data.error === "string" ? data.error : "Re-check failed",
+        );
+      }
+      if (data.status === "found") {
+        setStatusNote(
+          data.wikidata_label && data.wikidata_label !== entity.name
+            ? `Anchored — name kept; Wikidata label "${data.wikidata_label}" stored as alias`
+            : "Anchored to Wikidata",
+        );
+      } else if (data.status === "ambiguous") {
+        setStatusNote(
+          `Ambiguous — ${(data.candidates ?? []).length} candidates flagged for an editor`,
+        );
+      } else {
+        setStatusNote("No Wikidata match");
+      }
+      router.refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Re-check failed");
+    } finally {
+      setRechecking(false);
+    }
+  };
+
   const cancel = () => {
     setName(entity.name);
     setRoleTitle(entity.role_title);
@@ -100,30 +158,47 @@ export function AdminEntityRow({ entity }: { entity: AdminEntity }) {
   };
 
   const ambiguous = entity.candidates.length > 0;
+  const unanchored = showRecheck && isUnanchored(entity);
 
   return (
     <li className="border-b border-zinc-900 py-3 last:border-b-0">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-1 text-left"
-      >
-        <span className="text-sm font-medium text-zinc-100">{entity.name}</span>
-        <span className="text-[10px] uppercase tracking-wider text-zinc-600">
-          {entity.kind}
-        </span>
-        <SourceBadge source={entity.description_source} />
-        {ambiguous ? (
-          <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-300">
-            Ambiguous
+      <div className="flex flex-wrap items-start gap-3">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1 text-left"
+        >
+          <span className="text-sm font-medium text-zinc-100">{entity.name}</span>
+          <span className="ml-2 text-[10px] uppercase tracking-wider text-zinc-600">
+            {entity.kind}
           </span>
+          <span className="ml-2 inline-flex align-middle">
+            <SourceBadge source={entity.description_source} />
+          </span>
+          {ambiguous ? (
+            <span className="ml-2 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-300">
+              Ambiguous
+            </span>
+          ) : null}
+          <span className="ml-2 text-[11px] text-zinc-600">
+            {entity.story_count}{" "}
+            {entity.story_count === 1 ? "story" : "stories"} ·{" "}
+            {formatVerified(entity.identity_verified_at)}
+          </span>
+        </button>
+
+        {unanchored ? (
+          <button
+            type="button"
+            onClick={() => void recheck()}
+            disabled={rechecking || saving}
+            className="shrink-0 rounded-full border border-sky-500/40 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-sky-300 transition-colors hover:bg-sky-500/10 disabled:opacity-50"
+          >
+            {rechecking ? "Checking…" : "Re-check Wikidata"}
+          </button>
         ) : null}
-        <span className="text-[11px] text-zinc-600">
-          {entity.story_count} {entity.story_count === 1 ? "story" : "stories"} ·{" "}
-          {formatVerified(entity.identity_verified_at)}
-        </span>
-      </button>
+      </div>
 
       <div className="mt-1 space-y-0.5">
         {entity.role_title ? (
@@ -134,6 +209,12 @@ export function AdminEntityRow({ entity }: { entity: AdminEntity }) {
             <span className="italic text-zinc-700">No description</span>
           )}
         </p>
+        {statusNote ? (
+          <p className="text-[11px] text-sky-300">{statusNote}</p>
+        ) : null}
+        {error && !open ? (
+          <p className="text-xs text-red-400">{error}</p>
+        ) : null}
       </div>
 
       {ambiguous ? (
@@ -195,7 +276,7 @@ export function AdminEntityRow({ entity }: { entity: AdminEntity }) {
             <button
               type="button"
               onClick={save}
-              disabled={saving || name.trim().length === 0}
+              disabled={saving || rechecking || name.trim().length === 0}
               className="rounded-full bg-[#c8ff00] px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-black transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save as human-verified"}
@@ -203,7 +284,7 @@ export function AdminEntityRow({ entity }: { entity: AdminEntity }) {
             <button
               type="button"
               onClick={cancel}
-              disabled={saving}
+              disabled={saving || rechecking}
               className="text-[11px] uppercase tracking-wider text-zinc-500 hover:text-zinc-300 disabled:opacity-50"
             >
               Cancel

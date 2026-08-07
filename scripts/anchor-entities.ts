@@ -1,22 +1,29 @@
 /**
  * Anchor existing entities to Wikidata.
  *
- * Every entity written before the identity layer carries a model-authored
- * description, which is a guess dressed as a fact. This walks them all, asks
- * Wikidata who they are, and upgrades the ones it can identify. Nothing that an
- * editor or an earlier anchor has already settled is touched.
+ * Walks entities whose identity still comes from the model (or, with --redo,
+ * from an earlier Wikidata pass) and asks Wikidata who they are. The display
+ * name never changes — Wikidata's label becomes an alias when it differs.
+ * role_title is set only from a real position claim (P39), never from the
+ * English description.
  *
  * Flags:
  *   --dry-run  report without writing
- *   --redo     also re-check entities already anchored to Wikidata, and drop the
- *              anchor if the name no longer resolves. Use after changing the
- *              matching rules. Human-edited entities are never touched.
+ *   --redo     also re-check entities already anchored to Wikidata, drop bad
+ *              anchors, clear description-shaped role_titles, and add Wikidata
+ *              labels as aliases without renaming. Human-edited entities are
+ *              never touched.
  *
  * Run: npx tsx --env-file=.env.local scripts/anchor-entities.ts [--dry-run] [--redo]
  */
 import { createClient } from "@supabase/supabase-js";
 
-import { lookupEntity, type EntityKind } from "../src/lib/graph/wikidata";
+import {
+  isRoleTitleFromDescription,
+  lookupEntity,
+  type EntityKind,
+} from "../src/lib/graph/wikidata";
+import { normalizeExtractedEntityName } from "../src/lib/arc/extract-graph";
 
 const DELAY_MS = 300;
 
@@ -24,6 +31,7 @@ type EntityRow = {
   id: string;
   kind: string;
   name: string;
+  aliases: string[] | null;
   short_description: string | null;
   role_title: string | null;
   description_source: string | null;
@@ -40,6 +48,28 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function lower(s: string): string {
+  return s.trim().toLowerCase();
+}
+
+function mergeAliases(
+  existing: string[] | null | undefined,
+  name: string,
+  extra: string | null | undefined,
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of [...(existing ?? []), extra ?? ""]) {
+    const t = value.trim();
+    if (!t) continue;
+    if (lower(t) === lower(name)) continue;
+    if (seen.has(lower(t))) continue;
+    seen.add(lower(t));
+    out.push(t);
+  }
+  return out;
+}
+
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
   const redo = process.argv.includes("--redo");
@@ -49,10 +79,12 @@ async function main() {
     { auth: { persistSession: false } },
   );
 
-  const sources = redo ? ["model", "wikidata"] : ["model"];
+  const sources = redo ? ["model", "wikidata", "source_text"] : ["model"];
   const { data, error } = await supabase
     .from("entities")
-    .select("id,kind,name,short_description,role_title,description_source,wikidata_id")
+    .select(
+      "id,kind,name,aliases,short_description,role_title,description_source,wikidata_id",
+    )
     .in("description_source", sources)
     .order("name");
 
@@ -67,18 +99,63 @@ async function main() {
   const notFound: string[] = [];
   const ambiguous: string[] = [];
   const dropped: string[] = [];
+  const roleCleared: string[] = [];
+  const aliasAdded: string[] = [];
+  const namesFixed: string[] = [];
   const failed: string[] = [];
 
   for (const row of rows) {
-    const kind: EntityKind = row.kind === "person" ? "person" : "organization";
-    const oldDesc = row.short_description?.trim() || "(none)";
-    const result = await lookupEntity(row.name, kind);
+    // Repair extraction pollution: possessive phrases are not display names.
+    // This is not a Wikidata rename — it restores the newspaper form.
+    let working = row;
+    if (redo) {
+      const normalized = normalizeExtractedEntityName(row.name);
+      if (normalized && normalized !== row.name) {
+        if (!dryRun) {
+          const { error: nameErr } = await supabase
+            .from("entities")
+            .update({ name: normalized })
+            .eq("id", row.id);
+          if (nameErr) {
+            failed.push(`${row.name} — name fix failed: ${nameErr.message}`);
+            console.log(`FAILED     ${row.name}: ${nameErr.message}`);
+            await sleep(DELAY_MS);
+            continue;
+          }
+        }
+        namesFixed.push(`${row.name} → ${normalized}`);
+        console.log(`NAME FIX   ${row.name} → ${normalized}`);
+        working = { ...row, name: normalized };
+      } else if (normalized === null && /['']s\s+/i.test(row.name)) {
+        // Irreducible possessive junk ("Iran's military") — leave for an editor;
+        // lookup will miss it anyway.
+        console.log(`NAME SKIP  ${row.name} — possessive with no proper noun`);
+      }
+    }
+
+    const kind: EntityKind =
+      working.kind === "person" ? "person" : "organization";
+    const oldDesc = working.short_description?.trim() || "(none)";
+    const oldRole = working.role_title?.trim() || "";
+    const result = await lookupEntity(working.name, kind);
 
     if (result.status === "found") {
+      const aliases = mergeAliases(working.aliases, working.name, result.label);
+      const aliasChanged =
+        aliases.length !== (working.aliases ?? []).length ||
+        aliases.some(
+          (a, i) => lower(a) !== lower((working.aliases ?? [])[i] ?? ""),
+        );
+      const roleTitle = result.roleTitle;
+      const roleChanged = roleTitle !== oldRole;
+
       const patch = {
+        // Name stays the newspaper name. Wikidata label rides as an alias.
         wikidata_id: result.id,
-        short_description: result.description || row.short_description || "",
-        role_title: result.roleTitle,
+        short_description:
+          result.description || working.short_description || "",
+        role_title: roleTitle,
+        aliases,
         description_source: "wikidata",
         identity_verified_at: new Date().toISOString(),
         identity_candidates: [],
@@ -88,22 +165,53 @@ async function main() {
         const { error: updErr } = await supabase
           .from("entities")
           .update(patch)
-          .eq("id", row.id);
+          .eq("id", working.id);
         if (updErr) {
-          failed.push(`${row.name} — update failed: ${updErr.message}`);
-          console.log(`FAILED     ${row.name}: ${updErr.message}`);
+          failed.push(`${working.name} — update failed: ${updErr.message}`);
+          console.log(`FAILED     ${working.name}: ${updErr.message}`);
           await sleep(DELAY_MS);
           continue;
         }
       }
 
+      if (
+        result.label &&
+        lower(result.label) !== lower(working.name) &&
+        aliasChanged
+      ) {
+        aliasAdded.push(
+          `${working.name} — kept name, alias +${result.label}`,
+        );
+      }
+      if (oldRole && !roleTitle) {
+        roleCleared.push(
+          `${working.name} — cleared role_title "${oldRole}" (no position claim)`,
+        );
+      } else if (oldRole && roleTitle && oldRole !== roleTitle) {
+        roleCleared.push(
+          `${working.name} — role_title "${oldRole}" → "${roleTitle}"`,
+        );
+      }
+
       matched.push(
-        `${row.name} [${result.id}]\n    old: ${oldDesc}\n    new: ${patch.short_description}\n    role: ${result.roleTitle || "(none)"}`,
+        `${working.name} [${result.id}]\n    name kept: ${working.name}` +
+          (result.label && lower(result.label) !== lower(working.name)
+            ? ` (wikidata label → alias: ${result.label})`
+            : "") +
+          `\n    old: ${oldDesc}\n    new: ${patch.short_description}` +
+          `\n    role: ${roleTitle || "(none)"}${roleChanged && oldRole ? ` (was: ${oldRole})` : ""}`,
       );
-      console.log(`MATCHED    ${row.name} → ${result.id} ${result.label}`);
+      console.log(
+        `MATCHED    ${working.name} → ${result.id} ${result.label}` +
+          (lower(result.label) !== lower(working.name) ? " (name kept)" : ""),
+      );
     } else if (result.status === "ambiguous") {
       const candidates = result.candidates;
-      // An anchor that is now merely one of several candidates was never safe.
+      const clearRole =
+        oldRole &&
+        isRoleTitleFromDescription(oldRole, working.short_description)
+          ? { role_title: "" }
+          : {};
       const clearAnchor = row.wikidata_id
         ? {
             wikidata_id: null,
@@ -112,33 +220,36 @@ async function main() {
             description_source: "model",
             identity_verified_at: null,
           }
-        : {};
+        : clearRole;
 
       if (!dryRun) {
         const { error: updErr } = await supabase
           .from("entities")
           .update({ ...clearAnchor, identity_candidates: candidates })
-          .eq("id", row.id);
+          .eq("id", working.id);
         if (updErr) {
-          failed.push(`${row.name} — flag failed: ${updErr.message}`);
-          console.log(`FAILED     ${row.name}: ${updErr.message}`);
+          failed.push(`${working.name} — flag failed: ${updErr.message}`);
+          console.log(`FAILED     ${working.name}: ${updErr.message}`);
           await sleep(DELAY_MS);
           continue;
         }
       }
 
+      if (clearRole.role_title === "" || (row.wikidata_id && oldRole)) {
+        roleCleared.push(
+          `${working.name} — cleared role_title "${oldRole}" (ambiguous)`,
+        );
+      }
+
       ambiguous.push(
-        `${row.name} (kept: ${oldDesc})\n    candidates: ${candidates
+        `${working.name} (kept: ${oldDesc})\n    candidates: ${candidates
           .map((c) => `${c.id} ${c.label} — ${c.description}`)
           .join("\n                ")}`,
       );
       console.log(
-        `AMBIGUOUS  ${row.name} → ${candidates.length} candidates, flagged for an editor`,
+        `AMBIGUOUS  ${working.name} → ${candidates.length} candidates, flagged for an editor`,
       );
     } else if (result.status === "not_found") {
-      // A name that no longer resolves but carries an anchor was matched under
-      // the old rules and matched wrongly. The description came from that wrong
-      // item, so it goes too — a blank is safer than a confident error.
       if (row.wikidata_id) {
         if (!dryRun) {
           const { error: updErr } = await supabase
@@ -151,23 +262,54 @@ async function main() {
               identity_verified_at: null,
               identity_candidates: [],
             })
-            .eq("id", row.id);
+            .eq("id", working.id);
           if (updErr) {
-            failed.push(`${row.name} — drop failed: ${updErr.message}`);
-            console.log(`FAILED     ${row.name}: ${updErr.message}`);
+            failed.push(`${working.name} — drop failed: ${updErr.message}`);
+            console.log(`FAILED     ${working.name}: ${updErr.message}`);
             await sleep(DELAY_MS);
             continue;
           }
         }
-        dropped.push(`${row.name} — dropped bad anchor ${row.wikidata_id} (was: ${oldDesc})`);
-        console.log(`DROPPED    ${row.name} — bad anchor ${row.wikidata_id} removed`);
+        dropped.push(
+          `${working.name} — dropped bad anchor ${row.wikidata_id} (was: ${oldDesc})`,
+        );
+        console.log(
+          `DROPPED    ${working.name} — bad anchor ${row.wikidata_id} removed`,
+        );
       } else {
-        notFound.push(`${row.name} (kept: ${oldDesc})`);
-        console.log(`NOT FOUND  ${row.name} — description kept`);
+        // Hygiene: clear a role_title that is just the description in disguise.
+        if (
+          oldRole &&
+          isRoleTitleFromDescription(oldRole, working.short_description)
+        ) {
+          if (!dryRun) {
+            const { error: updErr } = await supabase
+              .from("entities")
+              .update({ role_title: "" })
+              .eq("id", working.id);
+            if (updErr) {
+              failed.push(
+                `${working.name} — role clear failed: ${updErr.message}`,
+              );
+              console.log(`FAILED     ${working.name}: ${updErr.message}`);
+              await sleep(DELAY_MS);
+              continue;
+            }
+          }
+          roleCleared.push(
+            `${working.name} — cleared role_title "${oldRole}" (matched description)`,
+          );
+          console.log(
+            `ROLE CLEAR ${working.name} — "${oldRole}" was description-shaped`,
+          );
+        } else {
+          notFound.push(`${working.name} (kept: ${oldDesc})`);
+          console.log(`NOT FOUND  ${working.name} — description kept`);
+        }
       }
     } else {
-      failed.push(`${row.name} — ${result.message}`);
-      console.log(`ERROR      ${row.name}: ${result.message}`);
+      failed.push(`${working.name} — ${result.message}`);
+      console.log(`ERROR      ${working.name}: ${result.message}`);
     }
 
     await sleep(DELAY_MS);
@@ -175,11 +317,20 @@ async function main() {
 
   console.log("\n" + "=".repeat(70));
   console.log(
-    `SUMMARY: ${matched.length} matched · ${notFound.length} not found · ${ambiguous.length} ambiguous · ${dropped.length} bad anchors dropped · ${failed.length} errors`,
+    `SUMMARY: ${matched.length} matched · ${notFound.length} not found · ${ambiguous.length} ambiguous · ${dropped.length} bad anchors dropped · ${roleCleared.length} role_titles cleaned · ${aliasAdded.length} aliases added · ${namesFixed.length} names fixed · ${failed.length} errors`,
   );
 
   console.log(`\nMATCHED (${matched.length})`);
   for (const line of matched) console.log(`  - ${line}`);
+
+  console.log(`\nNAMES FIXED — possessive stripped (${namesFixed.length})`);
+  for (const line of namesFixed) console.log(`  - ${line}`);
+
+  console.log(`\nALIASES ADDED — name kept (${aliasAdded.length})`);
+  for (const line of aliasAdded) console.log(`  - ${line}`);
+
+  console.log(`\nROLE_TITLE CLEANED (${roleCleared.length})`);
+  for (const line of roleCleared) console.log(`  - ${line}`);
 
   console.log(`\nAMBIGUOUS — flagged for editor (${ambiguous.length})`);
   for (const line of ambiguous) console.log(`  - ${line}`);

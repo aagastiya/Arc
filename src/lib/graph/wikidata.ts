@@ -367,16 +367,15 @@ export async function lookupEntity(
       missCache.add(missKey(trimmed, kind));
       return { status: "not_found" };
     }
-    let roleTitle = "";
 
+    // role_title only from a real office claim — never from the free-text
+    // description ("American businessman" is not a title).
+    let roleTitle = "";
     if (kind === "person") {
       const positionId = currentPositionId(match);
       if (positionId) {
         roleTitle = await labelFor(positionId).catch(() => "");
       }
-      // Wikidata descriptions for people are role-shaped ("American businessman"),
-      // so they stand in when no position is recorded.
-      if (!roleTitle) roleTitle = description;
     }
 
     return {
@@ -421,4 +420,18 @@ export function canOverwrite(
       ? DESCRIPTION_SOURCE_RANK[existing]
       : DESCRIPTION_SOURCE_RANK.model;
   return DESCRIPTION_SOURCE_RANK[incoming] >= current;
+}
+
+/**
+ * True when role_title is just the description wearing a different hat —
+ * the earlier backfill copied Wikidata descriptions into role_title.
+ */
+export function isRoleTitleFromDescription(
+  roleTitle: string | null | undefined,
+  description: string | null | undefined,
+): boolean {
+  const role = (roleTitle ?? "").trim().toLowerCase();
+  const desc = (description ?? "").trim().toLowerCase();
+  if (!role || !desc) return false;
+  return role === desc || desc.includes(role) || role.includes(desc);
 }

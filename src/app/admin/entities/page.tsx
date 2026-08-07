@@ -17,9 +17,21 @@ const FILTERS = [
   { key: "all", label: "All" },
   { key: "unverified", label: "Unverified" },
   { key: "ambiguous", label: "Ambiguous" },
+  { key: "unanchored", label: "Unanchored" },
 ] as const;
 
 type FilterKey = (typeof FILTERS)[number]["key"];
+
+function isUnanchoredEntity(entity: {
+  wikidata_id: string | null;
+  description_source: string;
+}): boolean {
+  return (
+    entity.wikidata_id === null &&
+    (entity.description_source === "model" ||
+      entity.description_source === "source_text")
+  );
+}
 
 type EntityRow = {
   id: string;
@@ -100,11 +112,13 @@ export default async function AdminEntitiesPage({
     all: entities.length,
     unverified: entities.filter((e) => e.identity_verified_at === null).length,
     ambiguous: entities.filter((e) => e.candidates.length > 0).length,
+    unanchored: entities.filter(isUnanchoredEntity).length,
   } satisfies Record<FilterKey, number>;
 
   const visible = entities.filter((entity) => {
     if (active === "unverified") return entity.identity_verified_at === null;
     if (active === "ambiguous") return entity.candidates.length > 0;
+    if (active === "unanchored") return isUnanchoredEntity(entity);
     return true;
   });
 
@@ -120,7 +134,7 @@ export default async function AdminEntitiesPage({
             </h1>
             <p className="mt-1 text-sm text-zinc-400">
               {entities.length} known · {anchored} anchored to Wikidata ·{" "}
-              {counts.ambiguous} need a ruling
+              {counts.unanchored} unanchored · {counts.ambiguous} need a ruling
             </p>
           </div>
           <AdminNav current="/admin/entities" />
@@ -128,7 +142,8 @@ export default async function AdminEntitiesPage({
 
         <p className="mt-4 text-xs text-zinc-600">
           Identity is who someone is, not what they did this week. An editor&apos;s
-          edit outranks Wikidata and can never be overwritten by extraction.
+          edit outranks Wikidata and can never be overwritten by extraction. The
+          newspaper name stays; Wikidata only anchors and may add an alias.
         </p>
 
         <nav aria-label="Filter entities" className="mt-6 flex flex-wrap gap-2">
@@ -143,7 +158,16 @@ export default async function AdminEntitiesPage({
                   : "border border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
               }`}
             >
-              {f.label} {counts[f.key]}
+              {f.label}{" "}
+              <span
+                className={
+                  f.key === "unanchored" && counts.unanchored > 0 && f.key !== active
+                    ? "rounded-full bg-amber-500/20 px-1.5 text-amber-300"
+                    : ""
+                }
+              >
+                {counts[f.key]}
+              </span>
             </Link>
           ))}
         </nav>
@@ -155,7 +179,11 @@ export default async function AdminEntitiesPage({
         ) : (
           <ul className="mt-4">
             {visible.map((entity) => (
-              <AdminEntityRow key={entity.id} entity={entity} />
+              <AdminEntityRow
+                key={entity.id}
+                entity={entity}
+                showRecheck={active === "unanchored" || isUnanchoredEntity(entity)}
+              />
             ))}
           </ul>
         )}

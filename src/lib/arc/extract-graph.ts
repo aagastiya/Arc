@@ -14,7 +14,7 @@ export const GRAPH_EXTRACT_PROMPT = `You are Arc's knowledge-graph extractor. Gi
   "entities": [
     {
       "kind": "person" | "organization",
-      "name": "canonical full name (e.g. Donald Trump, not Trump)",
+      "name": "the name a newspaper reader knows",
       "aliases": ["other names used in the text"],
       "short_description": "one factual line, max 15 words",
       "role": "subject" | "mentioned"
@@ -31,7 +31,10 @@ export const GRAPH_EXTRACT_PROMPT = `You are Arc's knowledge-graph extractor. Gi
 Rules:
 - Max 8 entities. Fewer, stronger entities beats more.
 - Graph-worthiness: only extract people/organizations likely to recur in news coverage — public officials, public figures, companies, institutions, agencies. NEVER extract private individuals who are merely quoted or affected (residents, witnesses, victims, bystanders). If unsure, leave them out.
-- Canonical names: use the person's complete name as given in the article (e.g. "John Farinacci", not "Farinacci"). If the article only ever gives a partial name, use that. Prefer the fullest form that appears in the text.
+- Common name: "name" is the name most commonly used for this entity IN THE SOURCE TEXT — the form a newspaper reader already knows. Prefer "Bernie Moreno" over "Bernie Moreno-Mejía" when the story mostly says Moreno; prefer "National Cyber Security Centre" over a longer official form the text never uses.
+- Copy the spelling exactly as it appears in the source. Never "correct", expand, or reformat a name from your own knowledge.
+- Never output possessive or descriptive phrases as names. "UK's National Cyber Security Centre" → "National Cyber Security Centre". "Iran's military" is not a name — skip it, or use only a proper noun the text gives for that force. Strip leading possessives ("X's …") yourself before writing the name.
+- Prefer the fullest form that actually appears in the text when several forms appear equally often (e.g. "John Farinacci", not "Farinacci"). If the article only ever gives a partial name, use that.
 - role = "subject" if the story is primarily about them; otherwise "mentioned".
 - short_description: factual, neutral, Arc voice. No opinion, speculation, or framing verbs (highlights, underscores, signals, etc.). Prefer "" over inventing facts.
 - NEVER state a role, title, office, or job from your own knowledge. Only describe someone as a president, chief executive, senator, director, or minister if the story text says so. If the story text does not give a role, leave short_description empty rather than supplying one you happen to know.
@@ -128,6 +131,37 @@ function uniqueAliases(values: string[]): string[] {
   return out;
 }
 
+/**
+ * Safety net after the model: possessive phrases are not names.
+ * "UK's National Cyber Security Centre" → "National Cyber Security Centre".
+ * "Iran's military" → null (skip — bare common nouns are not graph entities).
+ */
+export function normalizeExtractedEntityName(raw: string): string | null {
+  let name = raw.trim().replace(/\s+/g, " ");
+  if (!name) return null;
+
+  name = name.replace(/^the\s+/i, "").trim();
+
+  const possessive = name.match(/^(.+?)['']s\s+(.+)$/i);
+  if (possessive) {
+    name = possessive[2]!.trim();
+  }
+
+  if (!name) return null;
+  if (!/^[A-Z0-9]/.test(name)) return null;
+
+  // After stripping a possessive, a bare force/body noun is not an identity.
+  if (
+    /^(military|government|army|navy|air force|police|forces|ministry|department|authorities|officials)$/i.test(
+      name,
+    )
+  ) {
+    return null;
+  }
+
+  return name;
+}
+
 function entityMatches(
   row: EntityRow,
   kind: string,
@@ -216,13 +250,19 @@ function parseExtraction(raw: unknown): {
     const kind = e.kind === "person" || e.kind === "organization" ? e.kind : null;
     const role = e.role === "subject" || e.role === "mentioned" ? e.role : null;
     if (!kind || !role || typeof e.name !== "string" || !e.name.trim()) continue;
+    const name = normalizeExtractedEntityName(e.name);
+    if (!name) continue;
     const aliases = Array.isArray(e.aliases)
       ? e.aliases.filter((a): a is string => typeof a === "string")
       : [];
     entities.push({
       kind,
-      name: e.name.trim(),
-      aliases: uniqueAliases(aliases),
+      name,
+      aliases: uniqueAliases(
+        aliases
+          .map((a) => normalizeExtractedEntityName(a) ?? a.trim())
+          .filter(Boolean),
+      ).filter((a) => lower(a) !== lower(name)),
       short_description:
         typeof e.short_description === "string" ? e.short_description.trim() : "",
       role,
@@ -256,6 +296,7 @@ function parseExtraction(raw: unknown): {
 
 type ResolvedIdentity = {
   name: string;
+  wikidataLabel: string | null;
   shortDescription: string;
   roleTitle: string;
   wikidataId: string | null;
@@ -269,6 +310,9 @@ type ResolvedIdentity = {
  * clearly, the story's own words if not, and the model's sentence only when it
  * cannot be traced to the story — in which case it is marked as such. Anchoring
  * is best-effort; a Wikidata outage must not stop the graph.
+ *
+ * The display name stays the newspaper name from the story. Wikidata's label,
+ * when different, becomes an alias — the QID is the link, not a rename.
  */
 async function resolveNewIdentity(
   ent: { kind: "person" | "organization"; name: string; short_description: string },
@@ -277,6 +321,7 @@ async function resolveNewIdentity(
   const grounded = isGroundedIn(ent.short_description, storyText);
   const fallback: ResolvedIdentity = {
     name: ent.name,
+    wikidataLabel: null,
     shortDescription: grounded ? ent.short_description : "",
     roleTitle: "",
     wikidataId: null,
@@ -294,8 +339,8 @@ async function resolveNewIdentity(
 
   if (lookup.status === "found") {
     return {
-      // Wikidata's label is the canonical name; the story's version becomes an alias.
-      name: lookup.label || ent.name,
+      name: ent.name,
+      wikidataLabel: lookup.label || null,
       shortDescription: lookup.description || fallback.shortDescription,
       roleTitle: lookup.roleTitle,
       wikidataId: lookup.id,
@@ -490,9 +535,13 @@ export async function extractAndPersistGraph(opts: {
       .insert({
         kind: ent.kind,
         name: identity.name,
-        aliases: uniqueAliases(
-          identity.name === ent.name ? ent.aliases : [...ent.aliases, ent.name],
-        ).filter((a) => lower(a) !== lower(identity.name)),
+        aliases: uniqueAliases([
+          ...ent.aliases,
+          ...(identity.wikidataLabel &&
+          lower(identity.wikidataLabel) !== lower(identity.name)
+            ? [identity.wikidataLabel]
+            : []),
+        ]).filter((a) => lower(a) !== lower(identity.name)),
         short_description: identity.shortDescription,
         role_title: identity.roleTitle,
         wikidata_id: identity.wikidataId,
