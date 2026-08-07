@@ -22,7 +22,7 @@ export function ArchiveDraftButton({ storyId }: { storyId: string }) {
           typeof data.error === "string" ? data.error : "Archive failed",
         );
       }
-      router.push("/admin/review");
+      router.push("/admin");
       router.refresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Archive failed");

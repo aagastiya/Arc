@@ -12,6 +12,7 @@ import { DEFAULT_FEEDS } from "@/config/feeds";
 import {
   CANONICAL_CATEGORY_ORDER,
   normalizeStoryCategory,
+  parseReviewCategorySlug,
   type StoryCategoryBucket,
 } from "@/lib/categories";
 import {
@@ -26,7 +27,7 @@ import { isLiveblogItem } from "@/lib/rss/sync-feeds";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const PRIMARY_WINDOW_HOURS = 24;
 const FALLBACK_WINDOW_HOURS = 48;
@@ -582,7 +583,7 @@ function significantSharedKeyword(articles: ScanArticle[]): string | null {
   return shared[0] ?? null;
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     if (
       !process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -600,151 +601,57 @@ export async function POST() {
       );
     }
 
-    const supabase = createAdminClient();
-
-    const activeUrls = DEFAULT_FEEDS.map((f) => f.url);
-    const { data: feedRows, error: feedErr } = await supabase
-      .from("feeds")
-      .select("id,url")
-      .in("url", activeUrls);
-
-    if (feedErr) {
-      return NextResponse.json(
-        { error: "Failed to load feeds", details: feedErr.message },
-        { status: 500 },
-      );
-    }
-
-    const feedIds = (feedRows ?? []).map((f) => f.id as string);
-    if (feedIds.length === 0) {
-      return NextResponse.json(
-        { error: "No active feeds found. Run a news sync first." },
-        { status: 400 },
-      );
-    }
-
-    const bucketSlugs = slugsByBucket();
-    const buckets = SCAN_BUCKETS.filter((bucket) => bucketSlugs.has(bucket));
-
-    // Loaded per section rather than as one recency-ordered list, so a busy
-    // section cannot use up the row budget belonging to a quiet one.
-    const loadBucket = async (
-      bucket: StoryCategoryBucket,
-      hours: number,
-    ): Promise<BucketLoad> => {
-      const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-      const { data, error } = await supabase
-        .from("articles")
-        .select("id,title,summary,link,category,published_at,feeds(source_name)")
-        .in("feed_id", feedIds)
-        .in("category", bucketSlugs.get(bucket) ?? [])
-        .gte("published_at", since)
-        .order("published_at", { ascending: false, nullsFirst: false })
-        .limit(MAX_ARTICLES_PER_CATEGORY * 5);
-
-      if (error) {
-        throw new Error(error.message);
+    let onlyBucket: StoryCategoryBucket | null = null;
+    try {
+      const body = (await request.json()) as { category?: unknown };
+      if (typeof body?.category === "string" && body.category.trim()) {
+        const parsed =
+          parseReviewCategorySlug(body.category) ??
+          (normalizeStoryCategory(body.category) as StoryCategoryBucket);
+        onlyBucket = parsed;
       }
-
-      // Liveblogs were skipped at sync time, but older rows predate that filter.
-      const filtered = ((data ?? []) as unknown as ArticleRow[]).filter(
-        (row) =>
-          !isLiveblogItem(row.link ?? "", row.title ?? "") &&
-          !isNonStoryItem(row.title ?? ""),
-      );
-
-      const mapped: ScanArticle[] = filtered.map((row) => ({
-        id: row.id,
-        title: compact(row.title ?? "", 160),
-        summary: compact(row.summary ?? "", MAX_SUMMARY_CHARS),
-        sourceName: sourceNameOf(row),
-        category: normalizeStoryCategory(row.category ?? ""),
-        published_at: row.published_at,
-      }));
-
-      const selected = selectOverlapPreserving(
-        mapped,
-        MAX_ARTICLES_PER_CATEGORY,
-      );
-
-      return {
-        candidatesInWindow: mapped.length,
-        articles: selected,
-      };
-    };
-
-    const loadWindow = async (hours: number) =>
-      new Map(
-        await Promise.all(
-          buckets.map(
-            async (bucket) =>
-              [bucket, await loadBucket(bucket, hours)] as const,
-          ),
-        ),
-      );
-
-    let windowHours = PRIMARY_WINDOW_HOURS;
-    let byBucket = await loadWindow(PRIMARY_WINDOW_HOURS);
-    const total = (map: Map<StoryCategoryBucket, BucketLoad>) =>
-      [...map.values()].reduce((sum, load) => sum + load.articles.length, 0);
-
-    if (total(byBucket) < MIN_ARTICLES_FOR_PRIMARY_WINDOW) {
-      windowHours = FALLBACK_WINDOW_HOURS;
-      byBucket = await loadWindow(FALLBACK_WINDOW_HOURS);
+    } catch {
+      // Empty body = full scan (Rescan all).
     }
 
-    const articlesScanned = total(byBucket);
-    if (articlesScanned === 0) {
+    const result = await runEditorScan({ onlyBucket });
+    return NextResponse.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json(
+      { error: "Unexpected failure", details: message },
+      { status: 500 },
+    );
+  }
+}
+
+/** GET — return the latest cached scan for the desk. */
+export async function GET() {
+  try {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from("scan_cache")
+      .select("category,payload,created_at")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("[editor/scan] cache load failed:", error.message);
       return NextResponse.json({
-        window_hours: windowHours,
+        window_hours: 24,
         articles_scanned: 0,
         per_category: [],
         clusters: [],
+        cached_at: null,
+        from_cache: true,
+        cache_missing: true,
       });
     }
 
-    const { data: runningRows, error: runningErr } = await supabase
-      .from("events")
-      .select("id,title")
-      .eq("status", "running");
-
-    if (runningErr) {
-      return NextResponse.json(
-        { error: "Failed to load running events", details: runningErr.message },
-        { status: 500 },
-      );
-    }
-
-    const running = (runningRows ?? []) as RunningEvent[];
-    const events: EventIndex = {
-      byId: new Map(running.map((e) => [e.id, e])),
-      byTitle: new Map(running.map((e) => [normalizeTitle(e.title), e])),
-      block:
-        running.length === 0
-          ? "(none — no running events yet)"
-          : running.map((e) => `- id: ${e.id}\n  title: ${e.title}`).join("\n"),
-    };
-
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-    const active = buckets.filter(
-      (bucket) => (byBucket.get(bucket)?.articles.length ?? 0) > 0,
-    );
-
-    // Sections run together; one failing section still leaves a usable list.
-    const settled = await Promise.allSettled(
-      active.map((bucket) =>
-        scanCategory(
-          openai,
-          bucket,
-          byBucket.get(bucket)?.articles ?? [],
-          events,
-          windowHours,
-        ),
-      ),
-    );
-
+    const rows = data ?? [];
     const clusters: ClusterOut[] = [];
+    let windowHours = 24;
+    let articlesScanned = 0;
+    let newest: string | null = null;
     const perCategory: Array<{
       category: StoryCategoryBucket;
       candidates_in_window: number;
@@ -752,62 +659,39 @@ export async function POST() {
       clusters: number;
       size_distribution: { one: number; two: number; three_plus: number };
     }> = [];
-    const warnings: string[] = [];
 
-    active.forEach((bucket, index) => {
-      const result = settled[index]!;
-      const found = result.status === "fulfilled" ? result.value : [];
-      const load = byBucket.get(bucket)!;
-      const dist = clusterSizeDistribution(found.map((c) => c.source_count));
-
-      if (result.status === "rejected") {
-        const message =
-          result.reason instanceof Error
-            ? result.reason.message
-            : String(result.reason);
-        console.error(`[editor/scan] ${bucket} failed:`, message);
-        warnings.push(message);
+    for (const row of rows) {
+      const payload = row.payload as {
+        clusters?: ClusterOut[];
+        window_hours?: number;
+        articles_scanned?: number;
+        per_category?: (typeof perCategory)[number];
+      } | null;
+      if (!payload) continue;
+      if (Array.isArray(payload.clusters)) clusters.push(...payload.clusters);
+      if (typeof payload.window_hours === "number") {
+        windowHours = payload.window_hours;
       }
+      if (typeof payload.articles_scanned === "number") {
+        articlesScanned += payload.articles_scanned;
+      }
+      if (payload.per_category) perCategory.push(payload.per_category);
+      const created = row.created_at as string;
+      if (!newest || created > newest) newest = created;
+    }
 
-      console.log(
-        `[editor/scan] ${bucket}: candidates_in_window=${load.candidatesInWindow} sent_to_model=${load.articles.length} clusters=${found.length} sizes={1:${dist.one}, 2:${dist.two}, 3+:${dist.threePlus}}`,
-      );
-
-      clusters.push(...found);
-      perCategory.push({
-        category: bucket,
-        candidates_in_window: load.candidatesInWindow,
-        sent_to_model: load.articles.length,
-        clusters: found.length,
-        size_distribution: {
-          one: dist.one,
-          two: dist.two,
-          three_plus: dist.threePlus,
-        },
-      });
-    });
-
-    // Global rank: importance first, then multi-source over single-source.
     clusters.sort((a, b) => {
       if (b.importance !== a.importance) return b.importance - a.importance;
       return b.source_count - a.source_count;
     });
-
-    const existing = await loadExistingStories(
-      supabase,
-      [...new Set(clusters.flatMap((c) => c.article_ids))],
-    );
-    for (const cluster of clusters) {
-      cluster.existing_story =
-        cluster.article_ids.map((id) => existing.get(id)).find(Boolean) ?? null;
-    }
 
     return NextResponse.json({
       window_hours: windowHours,
       articles_scanned: articlesScanned,
       per_category: perCategory,
       clusters,
-      ...(warnings.length > 0 ? { warnings } : {}),
+      cached_at: newest,
+      from_cache: true,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -815,5 +699,261 @@ export async function POST() {
       { error: "Unexpected failure", details: message },
       { status: 500 },
     );
+  }
+}
+
+type ScanResult = {
+  window_hours: number;
+  articles_scanned: number;
+  per_category: Array<{
+    category: StoryCategoryBucket;
+    candidates_in_window: number;
+    sent_to_model: number;
+    clusters: number;
+    size_distribution: { one: number; two: number; three_plus: number };
+  }>;
+  clusters: ClusterOut[];
+  warnings?: string[];
+  cached_at?: string;
+};
+
+export async function runEditorScan(opts?: {
+  onlyBucket?: StoryCategoryBucket | null;
+}): Promise<ScanResult> {
+  const onlyBucket = opts?.onlyBucket ?? null;
+  const supabase = createAdminClient();
+
+  const activeUrls = DEFAULT_FEEDS.map((f) => f.url);
+  const { data: feedRows, error: feedErr } = await supabase
+    .from("feeds")
+    .select("id,url")
+    .in("url", activeUrls);
+
+  if (feedErr) {
+    throw new Error(`Failed to load feeds: ${feedErr.message}`);
+  }
+
+  const feedIds = (feedRows ?? []).map((f) => f.id as string);
+  if (feedIds.length === 0) {
+    return {
+      window_hours: PRIMARY_WINDOW_HOURS,
+      articles_scanned: 0,
+      per_category: [],
+      clusters: [],
+    };
+  }
+
+  const bucketSlugs = slugsByBucket();
+  let buckets = SCAN_BUCKETS.filter((bucket) => bucketSlugs.has(bucket));
+  if (onlyBucket) {
+    buckets = buckets.filter((b) => b === onlyBucket);
+    if (buckets.length === 0) {
+      throw new Error(`No feeds configured for ${onlyBucket}`);
+    }
+  }
+
+  const loadBucket = async (
+    bucket: StoryCategoryBucket,
+    hours: number,
+  ): Promise<BucketLoad> => {
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from("articles")
+      .select("id,title,summary,link,category,published_at,feeds(source_name)")
+      .in("feed_id", feedIds)
+      .in("category", bucketSlugs.get(bucket) ?? [])
+      .gte("published_at", since)
+      .order("published_at", { ascending: false, nullsFirst: false })
+      .limit(MAX_ARTICLES_PER_CATEGORY * 5);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const filtered = ((data ?? []) as unknown as ArticleRow[]).filter(
+      (row) =>
+        !isLiveblogItem(row.link ?? "", row.title ?? "") &&
+        !isNonStoryItem(row.title ?? ""),
+    );
+
+    const mapped: ScanArticle[] = filtered.map((row) => ({
+      id: row.id,
+      title: compact(row.title ?? "", 160),
+      summary: compact(row.summary ?? "", MAX_SUMMARY_CHARS),
+      sourceName: sourceNameOf(row),
+      category: normalizeStoryCategory(row.category ?? ""),
+      published_at: row.published_at,
+    }));
+
+    const selected = selectOverlapPreserving(mapped, MAX_ARTICLES_PER_CATEGORY);
+
+    return {
+      candidatesInWindow: mapped.length,
+      articles: selected,
+    };
+  };
+
+  const loadWindow = async (hours: number) =>
+    new Map(
+      await Promise.all(
+        buckets.map(
+          async (bucket) => [bucket, await loadBucket(bucket, hours)] as const,
+        ),
+      ),
+    );
+
+  let windowHours = PRIMARY_WINDOW_HOURS;
+  let byBucket = await loadWindow(PRIMARY_WINDOW_HOURS);
+  const total = (map: Map<StoryCategoryBucket, BucketLoad>) =>
+    [...map.values()].reduce((sum, load) => sum + load.articles.length, 0);
+
+  if (total(byBucket) < MIN_ARTICLES_FOR_PRIMARY_WINDOW) {
+    windowHours = FALLBACK_WINDOW_HOURS;
+    byBucket = await loadWindow(FALLBACK_WINDOW_HOURS);
+  }
+
+  const articlesScanned = total(byBucket);
+  if (articlesScanned === 0) {
+    return {
+      window_hours: windowHours,
+      articles_scanned: 0,
+      per_category: [],
+      clusters: [],
+    };
+  }
+
+  const { data: runningRows, error: runningErr } = await supabase
+    .from("events")
+    .select("id,title")
+    .eq("status", "running");
+
+  if (runningErr) {
+    throw new Error(`Failed to load running events: ${runningErr.message}`);
+  }
+
+  const running = (runningRows ?? []) as RunningEvent[];
+  const events: EventIndex = {
+    byId: new Map(running.map((e) => [e.id, e])),
+    byTitle: new Map(running.map((e) => [normalizeTitle(e.title), e])),
+    block:
+      running.length === 0
+        ? "(none — no running events yet)"
+        : running.map((e) => `- id: ${e.id}\n  title: ${e.title}`).join("\n"),
+  };
+
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  const active = buckets.filter(
+    (bucket) => (byBucket.get(bucket)?.articles.length ?? 0) > 0,
+  );
+
+  const settled = await Promise.allSettled(
+    active.map((bucket) =>
+      scanCategory(
+        openai,
+        bucket,
+        byBucket.get(bucket)?.articles ?? [],
+        events,
+        windowHours,
+      ),
+    ),
+  );
+
+  const clusters: ClusterOut[] = [];
+  const perCategory: ScanResult["per_category"] = [];
+  const warnings: string[] = [];
+
+  active.forEach((bucket, index) => {
+    const result = settled[index]!;
+    const found = result.status === "fulfilled" ? result.value : [];
+    const load = byBucket.get(bucket)!;
+    const dist = clusterSizeDistribution(found.map((c) => c.source_count));
+
+    if (result.status === "rejected") {
+      const message =
+        result.reason instanceof Error
+          ? result.reason.message
+          : String(result.reason);
+      console.error(`[editor/scan] ${bucket} failed:`, message);
+      warnings.push(message);
+    }
+
+    console.log(
+      `[editor/scan] ${bucket}: candidates_in_window=${load.candidatesInWindow} sent_to_model=${load.articles.length} clusters=${found.length} sizes={1:${dist.one}, 2:${dist.two}, 3+:${dist.threePlus}}`,
+    );
+
+    clusters.push(...found);
+    perCategory.push({
+      category: bucket,
+      candidates_in_window: load.candidatesInWindow,
+      sent_to_model: load.articles.length,
+      clusters: found.length,
+      size_distribution: {
+        one: dist.one,
+        two: dist.two,
+        three_plus: dist.threePlus,
+      },
+    });
+  });
+
+  clusters.sort((a, b) => {
+    if (b.importance !== a.importance) return b.importance - a.importance;
+    return b.source_count - a.source_count;
+  });
+
+  const existing = await loadExistingStories(
+    supabase,
+    [...new Set(clusters.flatMap((c) => c.article_ids))],
+  );
+  for (const cluster of clusters) {
+    cluster.existing_story =
+      cluster.article_ids.map((id) => existing.get(id)).find(Boolean) ?? null;
+  }
+
+  const cachedAt = new Date().toISOString();
+  await writeScanCache(supabase, clusters, perCategory, windowHours, cachedAt);
+
+  return {
+    window_hours: windowHours,
+    articles_scanned: articlesScanned,
+    per_category: perCategory,
+    clusters,
+    ...(warnings.length > 0 ? { warnings } : {}),
+    cached_at: cachedAt,
+  };
+}
+
+async function writeScanCache(
+  supabase: ReturnType<typeof createAdminClient>,
+  clusters: ClusterOut[],
+  perCategory: ScanResult["per_category"],
+  windowHours: number,
+  cachedAt: string,
+): Promise<void> {
+  const byCat = new Map<StoryCategoryBucket, ClusterOut[]>();
+  for (const c of clusters) {
+    const list = byCat.get(c.category) ?? [];
+    list.push(c);
+    byCat.set(c.category, list);
+  }
+
+  const rows = perCategory.map((pc) => ({
+    category: pc.category,
+    payload: {
+      clusters: byCat.get(pc.category) ?? [],
+      window_hours: windowHours,
+      articles_scanned: pc.sent_to_model,
+      per_category: pc,
+    },
+    created_at: cachedAt,
+  }));
+
+  if (rows.length === 0) return;
+
+  const { error } = await supabase.from("scan_cache").upsert(rows, {
+    onConflict: "category",
+  });
+  if (error) {
+    console.error("[editor/scan] scan_cache upsert failed:", error.message);
   }
 }

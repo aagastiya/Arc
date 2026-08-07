@@ -1,9 +1,9 @@
 import Link from "next/link";
 
 const LINKS = [
-  { href: "/admin", label: "Editor" },
+  { href: "/admin", label: "Desk" },
+  { href: "/admin/stories", label: "Stories" },
   { href: "/admin/edition", label: "Edition" },
-  { href: "/admin/review", label: "Review" },
   { href: "/admin/entities", label: "Entities" },
   { href: "/admin/sources", label: "Sources" },
 ] as const;

@@ -111,7 +111,7 @@ function FlagDetails({ flags }: { flags: VerificationFlag[] }) {
   );
 }
 
-function StoryCard({
+export function ReviewDraftCard({
   story,
   expanded,
   included,
@@ -751,7 +751,7 @@ export function AdminGenreReview({
       ) : (
         <div className="space-y-3">
           {visibleRemaining.map((story) => (
-            <StoryCard
+            <ReviewDraftCard
               key={story.id}
               story={story}
               expanded={Boolean(expanded[story.id])}
