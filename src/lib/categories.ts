@@ -110,6 +110,34 @@ export function parseReviewCategorySlug(
   return match ?? null;
 }
 
+/**
+ * Every lowercase category string that normalizes into this bucket. Used so
+ * live counts and draft lists agree when older rows still say "politics".
+ */
+export function dbCategoryValuesForBucket(
+  bucket: StoryCategoryBucket,
+): string[] {
+  switch (bucket) {
+    case "World":
+      return ["world", "politics", "geopolitics"];
+    case "India":
+      return ["india"];
+    case "Finance":
+      return ["economy", "finance", "business"];
+    case "Tech":
+      return ["tech", "technology", "science"];
+    case "Culture":
+      return ["culture", "entertainment", "arts"];
+    case "Sports":
+      return ["sports", "sport"];
+    case "Local":
+      return ["local"];
+    case "Other":
+    default:
+      return [];
+  }
+}
+
 /** Picks the section lead: explicit `is_section_hero`, else newest (first in list), else null. */
 export function findSectionHero(stories: LiveStory[]): LiveStory | null {
   if (stories.length === 0) {

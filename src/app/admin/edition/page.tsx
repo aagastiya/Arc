@@ -90,7 +90,7 @@ function CategoryBlock({
   label,
   rows,
 }: {
-  label: string;
+  label: StoryCategoryBucket;
   rows: EditionStoryRow[];
 }) {
   const ordered = inReaderOrder(rows);
@@ -117,7 +117,7 @@ function CategoryBlock({
 
         {label !== "Other" ? (
           <Link
-            href={`/admin/review/${reviewCategorySlug(label as StoryCategoryBucket)}`}
+            href={`/admin/review/${reviewCategorySlug(label)}`}
             className="ml-auto text-[10px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-[#c8ff00]"
           >
             Review drafts →

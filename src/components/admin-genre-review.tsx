@@ -3,10 +3,12 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
-import type {
-  Verification,
-  VerificationFlag,
-} from "@/app/admin/[id]/verification-panel";
+import type { Verification, VerificationFlag } from "@/lib/arc/verification";
+import {
+  isFlaggedVerification,
+  isPublishableVerification,
+  isUnverified,
+} from "@/lib/arc/verification";
 
 export type ReviewSource = {
   id: string;
@@ -58,31 +60,22 @@ type PublishResult =
   | { id: string; ok: true; headline: string }
   | { id: string; ok: false; headline: string; error: string };
 
-function flagCount(verification: Verification | null): number | null {
-  if (!verification) return null;
-  return verification.flags.length;
-}
-
-function isFlagged(verification: Verification | null): boolean {
-  return (flagCount(verification) ?? 0) > 0;
-}
-
 function VerificationBadge({ verification }: { verification: Verification | null }) {
-  const flags = flagCount(verification);
-  if (flags === null) {
+  if (isUnverified(verification)) {
     return (
       <span className="rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-        Not verified
+        Unverified
       </span>
     );
   }
-  if (flags === 0) {
+  if (isPublishableVerification(verification)) {
     return (
       <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-300">
         Verified
       </span>
     );
   }
+  const flags = verification!.flags.length;
   return (
     <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-300">
       {flags} {flags === 1 ? "flag" : "flags"}
@@ -118,19 +111,25 @@ function StoryCard({
   expanded,
   included,
   regenerating,
+  verifying,
   onToggleExpand,
   onToggleInclude,
   onRegenerate,
+  onVerify,
 }: {
   story: ReviewStory;
   expanded: boolean;
   included: boolean;
   regenerating: boolean;
+  verifying: boolean;
   onToggleExpand: () => void;
   onToggleInclude: () => void;
   onRegenerate: () => void;
+  onVerify: () => void;
 }) {
-  const flagged = isFlagged(story.verification);
+  const flagged = isFlaggedVerification(story.verification);
+  const unverified = isUnverified(story.verification);
+  const blocked = !isPublishableVerification(story.verification);
   const event = story.events[0] ?? null;
 
   return (
@@ -138,22 +137,26 @@ function StoryCard({
       className={`rounded-lg border transition-colors ${
         flagged
           ? "border-amber-500/35 bg-amber-500/[0.04]"
-          : included
-            ? "border-zinc-800 bg-zinc-900/40"
-            : "border-zinc-900 bg-zinc-950/50 opacity-70"
+          : unverified
+            ? "border-zinc-700 bg-zinc-950/60"
+            : included
+              ? "border-zinc-800 bg-zinc-900/40"
+              : "border-zinc-900 bg-zinc-950/50 opacity-70"
       }`}
     >
       <div className="flex items-start gap-3 p-4">
         <button
           type="button"
           onClick={onToggleInclude}
-          disabled={flagged && !included}
+          disabled={blocked}
           title={
             flagged
               ? "Flagged stories cannot be included until regenerated clean"
-              : included
-                ? "Exclude from this publish"
-                : "Include in this publish"
+              : unverified
+                ? "Unverified stories cannot be included until verified"
+                : included
+                  ? "Exclude from this publish"
+                  : "Include in this publish"
           }
           aria-pressed={included}
           aria-label={included ? "Exclude story" : "Include story"}
@@ -314,6 +317,28 @@ function StoryCard({
                 All {story.verification.claims_checked} claims verified against
                 sources.
               </p>
+            ) : (
+              <p className="text-sm text-zinc-500">
+                No verification run yet. Verify before this story can join the
+                batch.
+              </p>
+            )}
+
+            {unverified ? (
+              <div className="flex flex-wrap items-center gap-3 rounded border border-zinc-700 bg-zinc-950/80 px-3 py-2.5">
+                <p className="flex-1 text-xs leading-relaxed text-zinc-400">
+                  Unverified stories stay out of the batch. Run verification on
+                  the existing draft — no regeneration.
+                </p>
+                <button
+                  type="button"
+                  onClick={onVerify}
+                  disabled={verifying}
+                  className="rounded-full border border-[#c8ff00]/50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-[#c8ff00] transition-colors hover:bg-[#c8ff00] hover:text-black disabled:opacity-50"
+                >
+                  {verifying ? "Verifying…" : "Verify now"}
+                </button>
+              </div>
             ) : null}
 
             {flagged ? (
@@ -356,10 +381,14 @@ export function AdminGenreReview({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [included, setIncluded] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
-      initialStories.map((s) => [s.id, !isFlagged(s.verification)]),
+      initialStories.map((s) => [
+        s.id,
+        isPublishableVerification(s.verification),
+      ]),
     ),
   );
   const [regenerating, setRegenerating] = useState<Record<string, boolean>>({});
+  const [verifying, setVerifying] = useState<Record<string, boolean>>({});
   const [confirming, setConfirming] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -376,15 +405,49 @@ export function AdminGenreReview({
 
   const remaining = draftStories.filter((s) => !publishedIds.has(s.id));
   const includedIds = remaining
-    .filter((s) => included[s.id] && !isFlagged(s.verification))
+    .filter(
+      (s) =>
+        included[s.id] && isPublishableVerification(s.verification),
+    )
     .map((s) => s.id);
   const excludedRemaining = remaining.filter(
     (s) => !includedIds.includes(s.id),
   );
 
   const toggleInclude = (story: ReviewStory) => {
-    if (isFlagged(story.verification) && !included[story.id]) return;
+    if (!isPublishableVerification(story.verification)) return;
     setIncluded((prev) => ({ ...prev, [story.id]: !prev[story.id] }));
+  };
+
+  const verifyNow = async (story: ReviewStory) => {
+    setVerifying((prev) => ({ ...prev, [story.id]: true }));
+    setPublishError(null);
+    try {
+      const res = await fetch(
+        `/api/admin/stories/${encodeURIComponent(story.id)}/verify`,
+        { method: "POST", credentials: "same-origin" },
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        verification?: Verification | null;
+      };
+      if (!res.ok) {
+        throw new Error(
+          typeof data.error === "string" ? data.error : "Verification failed",
+        );
+      }
+      const verification = data.verification ?? null;
+      const clean = isPublishableVerification(verification);
+
+      setStories((prev) =>
+        prev.map((s) => (s.id === story.id ? { ...s, verification } : s)),
+      );
+      setIncluded((prev) => ({ ...prev, [story.id]: clean }));
+    } catch (err: unknown) {
+      setPublishError(err instanceof Error ? err.message : "Verification failed");
+    } finally {
+      setVerifying((prev) => ({ ...prev, [story.id]: false }));
+    }
   };
 
   const regenerate = async (story: ReviewStory) => {
@@ -437,7 +500,7 @@ export function AdminGenreReview({
 
       const saved = data.saved_story;
       const verification = data.verification ?? saved?.verification ?? null;
-      const flagged = isFlagged(verification);
+      const clean = isPublishableVerification(verification);
 
       setStories((prev) =>
         prev.map((s) => {
@@ -480,7 +543,7 @@ export function AdminGenreReview({
       );
 
       const nextId = saved?.id ?? story.id;
-      setIncluded((prev) => ({ ...prev, [nextId]: !flagged }));
+      setIncluded((prev) => ({ ...prev, [nextId]: clean }));
       if (nextId !== story.id) {
         setExpanded((prev) => {
           const next = { ...prev };
@@ -548,9 +611,9 @@ export function AdminGenreReview({
           </span>
         </div>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-500">
-          Read every draft here. Clean stories start included; flagged ones stay
-          out until regenerated clean. Publish puts the included set live and
-          approves their graph links.
+          Read every draft here. Verified-clean stories start included; unverified
+          and flagged ones stay out until fixed. Publish puts the included set
+          live and approves their graph links first.
         </p>
       </header>
 
@@ -588,8 +651,12 @@ export function AdminGenreReview({
               key={story.id}
               story={story}
               expanded={Boolean(expanded[story.id])}
-              included={Boolean(included[story.id]) && !isFlagged(story.verification)}
+              included={
+                Boolean(included[story.id]) &&
+                isPublishableVerification(story.verification)
+              }
               regenerating={Boolean(regenerating[story.id])}
+              verifying={Boolean(verifying[story.id])}
               onToggleExpand={() =>
                 setExpanded((prev) => ({
                   ...prev,
@@ -598,6 +665,7 @@ export function AdminGenreReview({
               }
               onToggleInclude={() => toggleInclude(story)}
               onRegenerate={() => void regenerate(story)}
+              onVerify={() => void verifyNow(story)}
             />
           ))}
         </div>
@@ -615,9 +683,13 @@ export function AdminGenreReview({
                 className="border-b border-zinc-900 py-2 text-sm text-zinc-400"
               >
                 {story.headline}
-                {isFlagged(story.verification) ? (
+                {isFlaggedVerification(story.verification) ? (
                   <span className="ml-2 text-[10px] uppercase tracking-wider text-amber-400">
                     flagged
+                  </span>
+                ) : isUnverified(story.verification) ? (
+                  <span className="ml-2 text-[10px] uppercase tracking-wider text-zinc-500">
+                    unverified
                   </span>
                 ) : (
                   <span className="ml-2 text-[10px] uppercase tracking-wider text-zinc-600">
@@ -640,8 +712,8 @@ export function AdminGenreReview({
         <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3 px-6 py-3 md:px-10">
           <p className="text-xs text-zinc-500">
             {includedIds.length} of {remaining.length} selected
-            {remaining.some((s) => isFlagged(s.verification))
-              ? " · flagged stories blocked"
+            {remaining.some((s) => !isPublishableVerification(s.verification))
+              ? " · unverified and flagged stories blocked"
               : ""}
           </p>
           <div className="flex items-center gap-2">

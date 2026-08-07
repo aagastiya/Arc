@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 
-import { parseVerification } from "@/app/admin/[id]/verification-panel";
 import {
   canonicalCategoryToDbValue,
   isAllowedStoryCategoryDbValue,
   normalizeStoryCategory,
   parseReviewCategorySlug,
 } from "@/lib/categories";
+import {
+  isFlaggedVerification,
+  isPublishableVerification,
+  parseVerification,
+} from "@/lib/arc/verification";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -21,8 +25,9 @@ type StoryResult =
   | { id: string; ok: false; headline: string; error: string };
 
 /**
- * Batch-publish a Genre Review selection. Flagged stories are refused even if
- * the client somehow sends them — the hard block is enforced here, not only in UI.
+ * Batch-publish a Genre Review selection. A story goes live only after its
+ * graph links are approved, and only when verification is present with zero
+ * flags — unverified and flagged alike are refused here, not only in the UI.
  */
 export async function POST(request: Request) {
   try {
@@ -109,12 +114,39 @@ export async function POST(request: Request) {
       }
 
       const verification = parseVerification(story.verification);
-      if (verification && verification.flags.length > 0) {
+      if (!isPublishableVerification(verification)) {
         results.push({
           id: storyId,
           ok: false,
           headline,
-          error: `${verification.flags.length} verification flag${verification.flags.length === 1 ? "" : "s"} — cannot publish`,
+          error: isFlaggedVerification(verification)
+            ? `${verification!.flags.length} verification flag${verification!.flags.length === 1 ? "" : "s"} — cannot publish`
+            : "Not verified — cannot publish",
+        });
+        continue;
+      }
+
+      // Approve graph first. Approved links on a draft are harmless; a live story
+      // with unapproved links is not.
+      const [{ error: entErr }, { error: evErr }] = await Promise.all([
+        supabase
+          .from("story_entities")
+          .update({ approved: true })
+          .eq("story_id", storyId)
+          .eq("approved", false),
+        supabase
+          .from("story_events")
+          .update({ approved: true })
+          .eq("story_id", storyId)
+          .eq("approved", false),
+      ]);
+
+      if (entErr || evErr) {
+        results.push({
+          id: storyId,
+          ok: false,
+          headline,
+          error: `Graph approval failed: ${entErr?.message ?? evErr?.message}`,
         });
         continue;
       }
@@ -145,29 +177,6 @@ export async function POST(request: Request) {
           ok: false,
           headline,
           error: updErr.message,
-        });
-        continue;
-      }
-
-      const [{ error: entErr }, { error: evErr }] = await Promise.all([
-        supabase
-          .from("story_entities")
-          .update({ approved: true })
-          .eq("story_id", storyId)
-          .eq("approved", false),
-        supabase
-          .from("story_events")
-          .update({ approved: true })
-          .eq("story_id", storyId)
-          .eq("approved", false),
-      ]);
-
-      if (entErr || evErr) {
-        results.push({
-          id: storyId,
-          ok: false,
-          headline,
-          error: `Published, but graph approval failed: ${entErr?.message ?? evErr?.message}`,
         });
         continue;
       }

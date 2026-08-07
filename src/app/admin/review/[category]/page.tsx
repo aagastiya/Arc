@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 
-import { parseVerification } from "@/app/admin/[id]/verification-panel";
 import { AdminNav } from "@/components/admin-nav";
 import {
   AdminGenreReview,
@@ -11,8 +10,9 @@ import {
   type ReviewSource,
   type ReviewStory,
 } from "@/components/admin-genre-review";
+import { parseVerification } from "@/lib/arc/verification";
 import {
-  canonicalCategoryToDbValue,
+  dbCategoryValuesForBucket,
   normalizeStoryCategory,
   parseReviewCategorySlug,
   reviewCategorySlug,
@@ -89,7 +89,6 @@ export default async function AdminGenreReviewPage({
   if (!bucket) notFound();
 
   const slug = reviewCategorySlug(bucket);
-  const dbValue = canonicalCategoryToDbValue(bucket);
   const supabase = createAdminClient();
 
   // Pull a wide draft set, then keep those whose normalized bucket matches —
@@ -110,18 +109,22 @@ export default async function AdminGenreReviewPage({
     (row) => normalizeStoryCategory(row.category) === bucket,
   );
 
-  const { count: liveCount, error: liveErr } = await supabase
-    .from("stories")
-    .select("id", { count: "exact", head: true })
-    .eq("is_live", true)
-    .eq("category", dbValue);
+  const categoryValues = dbCategoryValuesForBucket(bucket);
+  let liveCount = 0;
+  if (categoryValues.length > 0) {
+    const { count, error: liveErr } = await supabase
+      .from("stories")
+      .select("id", { count: "exact", head: true })
+      .eq("is_live", true)
+      .in("category", categoryValues);
 
-  if (liveErr) {
-    throw new Error(`Failed to count live stories: ${liveErr.message}`);
+    if (liveErr) {
+      throw new Error(`Failed to count live stories: ${liveErr.message}`);
+    }
+    liveCount = count ?? 0;
   }
 
   const storyIds = drafts.map((d) => d.id);
-  const articleIdSet = new Set(drafts.map((d) => d.article_id));
 
   const sourcesByStory = new Map<string, ReviewSource[]>();
   const articleIdsByStory = new Map<string, string[]>();
@@ -163,7 +166,6 @@ export default async function AdminGenreReviewPage({
         ...(articleIdsByStory.get(storyId) ?? []),
         articleId,
       ]);
-      articleIdSet.add(articleId);
 
       const article = Array.isArray(row.articles)
         ? row.articles[0]
