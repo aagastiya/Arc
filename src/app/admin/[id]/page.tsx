@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ArchiveDraftButton } from "./archive-button";
+import { PublishOverride } from "./publish-override";
 import { clampImportance, IMPORTANCE_DEFAULT } from "@/lib/edition";
 import { newestSourcePublishedAt } from "@/lib/story-dates";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -108,6 +109,8 @@ export default async function StoryEditorPage({
     }
     const newestSourceAt = newestSourcePublishedAt(sourceDates);
 
+    const verification = parseVerification(story.verification);
+
     return (
       <main className="min-h-screen bg-[var(--background)] px-6 py-10 text-zinc-100 md:px-10">
         <div className="mx-auto w-full max-w-7xl">
@@ -162,6 +165,14 @@ export default async function StoryEditorPage({
                 isDraft={!story.is_live}
               />
               <div className="mt-4">
+                <PublishOverride
+                  storyId={story.id}
+                  isLive={Boolean(story.is_live)}
+                  verification={verification}
+                  archived={Boolean(story.archived_at)}
+                />
+              </div>
+              <div className="mt-4">
                 <EditForm
                   story={{
                     id: story.id,
@@ -187,7 +198,7 @@ export default async function StoryEditorPage({
             </section>
           </div>
 
-          <VerificationPanel verification={parseVerification(story.verification)} />
+          <VerificationPanel verification={verification} />
 
           <AdminGraphPanel storyId={story.id} />
         </div>

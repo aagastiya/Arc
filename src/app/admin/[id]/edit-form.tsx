@@ -44,7 +44,6 @@ export function EditForm({ story }: EditFormProps) {
   const [arcStoryline, setArcStoryline] = useState<StorylineItem[]>(story.arc_storyline);
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(story.cover_image_url);
   const [clipUrl, setClipUrl] = useState<string | null>(story.clip_url);
-  const [isLive, setIsLive] = useState(Boolean(story.is_live));
   const [isSectionHero, setIsSectionHero] = useState(Boolean(story.is_section_hero));
   const [importance, setImportance] = useState(story.importance);
   const [category, setCategory] = useState<string>(() =>
@@ -54,7 +53,6 @@ export function EditForm({ story }: EditFormProps) {
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [isUploadingClip, setIsUploadingClip] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isTogglingPublish, setIsTogglingPublish] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
@@ -63,13 +61,11 @@ export function EditForm({ story }: EditFormProps) {
     setArcHeadline(story.arc_headline);
     setArcSummary(story.arc_summary);
     setArcStoryline(story.arc_storyline);
-    setIsLive(Boolean(story.is_live));
     setImportance(story.importance);
   }, [
     story.arc_headline,
     story.arc_summary,
     story.arc_storyline,
-    story.is_live,
     story.importance,
   ]);
 
@@ -88,8 +84,8 @@ export function EditForm({ story }: EditFormProps) {
   }, [savedMessage]);
 
   const isBusy = useMemo(
-    () => isSaving || isUploadingCover || isUploadingClip || isTogglingPublish,
-    [isSaving, isUploadingCover, isUploadingClip, isTogglingPublish],
+    () => isSaving || isUploadingCover || isUploadingClip,
+    [isSaving, isUploadingCover, isUploadingClip],
   );
 
   const handleUpload = async (file: File, bucket: "clips" | "cover") => {
@@ -204,50 +200,6 @@ export function EditForm({ story }: EditFormProps) {
       setError(err instanceof Error ? err.message : "Failed to save changes.");
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  const handleTogglePublish = async () => {
-    setError(null);
-    setSavedMessage(null);
-
-    if (!isLive) {
-      if (!arcHeadline.trim()) {
-        setError("Cannot publish: arc_headline is required");
-        return;
-      }
-      if (!arcSummary.trim()) {
-        setError("Cannot publish: arc_summary is required");
-        return;
-      }
-    }
-
-    setIsTogglingPublish(true);
-    try {
-      const nextIsLive = !isLive;
-      const response = await fetch(`/api/arc/stories/${encodeURIComponent(story.id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ is_live: nextIsLive }),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const message =
-          typeof payload?.error === "string"
-            ? payload.error
-            : nextIsLive
-              ? "Publishing failed."
-              : "Unpublishing failed.";
-        throw new Error(message);
-      }
-
-      setIsLive(nextIsLive);
-      router.refresh();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to update publish status.");
-    } finally {
-      setIsTogglingPublish(false);
     }
   };
 
@@ -445,37 +397,6 @@ export function EditForm({ story }: EditFormProps) {
             </span>
           </span>
         </label>
-      </div>
-
-      <div className="rounded-md border border-zinc-800 bg-zinc-950/60 p-4">
-        <p className="text-sm text-zinc-400">Publish status:</p>
-        <div className="mt-2 flex items-center gap-3">
-          <span
-            className={`inline-flex rounded-full border px-2 py-1 text-xs font-medium ${
-              isLive ? "border-[#c8ff00] text-[#c8ff00]" : "border-zinc-600 text-zinc-300"
-            }`}
-          >
-            {isLive ? "Live" : "Draft"}
-          </span>
-          <button
-            type="button"
-            onClick={handleTogglePublish}
-            disabled={isBusy}
-            className={
-              isLive
-                ? "rounded border border-zinc-700 px-3 py-1 text-xs font-semibold text-zinc-200 hover:border-zinc-500 disabled:opacity-60"
-                : "rounded border border-[#c8ff00]/50 px-3 py-1 text-xs font-semibold text-[#c8ff00] hover:border-[#c8ff00] hover:bg-[#c8ff00]/10 disabled:opacity-60"
-            }
-          >
-            {isTogglingPublish
-              ? isLive
-                ? "Unpublishing..."
-                : "Publishing..."
-              : isLive
-                ? "Unpublish"
-                : "Publish"}
-          </button>
-        </div>
       </div>
 
       <div className="flex items-center gap-3">

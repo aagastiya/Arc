@@ -431,6 +431,7 @@ export function AdminGenreReview({
   const [regenerating, setRegenerating] = useState<Record<string, boolean>>({});
   const [verifying, setVerifying] = useState<Record<string, boolean>>({});
   const [archiving, setArchiving] = useState<Record<string, boolean>>({});
+  const [filterQuery, setFilterQuery] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -455,6 +456,15 @@ export function AdminGenreReview({
   const excludedRemaining = remaining.filter(
     (s) => !includedIds.includes(s.id),
   );
+
+  const visibleRemaining = useMemo(() => {
+    const q = filterQuery.trim().toLowerCase();
+    if (!q) return remaining;
+    return remaining.filter((s) => {
+      const haystack = `${s.headline} ${s.standfirst}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [remaining, filterQuery]);
 
   const toggleInclude = (story: ReviewStory) => {
     if (!isPublishableVerification(story.verification)) return;
@@ -713,13 +723,34 @@ export function AdminGenreReview({
         </section>
       ) : null}
 
+      {remaining.length > 0 ? (
+        <div className="mb-4">
+          <input
+            type="search"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            placeholder="Filter drafts by headline or standfirst…"
+            className="w-full rounded-md border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-[#c8ff00] focus:outline-none"
+          />
+          {filterQuery.trim() ? (
+            <p className="mt-1.5 text-xs text-zinc-500">
+              {visibleRemaining.length} of {remaining.length} drafts
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {remaining.length === 0 ? (
         <p className="py-10 text-sm italic text-zinc-600">
           No unpublished drafts in this section.
         </p>
+      ) : visibleRemaining.length === 0 ? (
+        <p className="py-10 text-sm italic text-zinc-600">
+          No drafts match that filter.
+        </p>
       ) : (
         <div className="space-y-3">
-          {remaining.map((story) => (
+          {visibleRemaining.map((story) => (
             <StoryCard
               key={story.id}
               story={story}

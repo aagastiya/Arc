@@ -1,26 +1,14 @@
 import { AdminEditorPicks } from "@/components/admin-editor-picks";
 import { AdminNav } from "@/components/admin-nav";
-import { AdminSearchList } from "@/components/admin-search-list";
+import {
+  AdminSearchList,
+  type AdminArticleRow,
+  type AdminStoryRow,
+} from "@/components/admin-search-list";
 import { SyncNewsButton } from "@/components/sync-news-button";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
-
-type ArticleRow = {
-  id: string;
-  title: string;
-  category: string | null;
-  published_at: string | null;
-  feeds: { source_name: string | null } | null;
-};
-
-type StoryRow = {
-  id: string;
-  article_id: string;
-  is_live: boolean;
-  arc_headline: string;
-  published_at: string | null;
-};
 
 export default async function AdminPage() {
   const supabase = createAdminClient();
@@ -35,25 +23,72 @@ export default async function AdminPage() {
     throw new Error(`Failed to load articles: ${articlesError.message}`);
   }
 
-  const articleRows = (articles ?? []) as unknown as ArticleRow[];
-  const articleIds = articleRows.map((article) => article.id);
+  const articleRows = (articles ?? []) as unknown as AdminArticleRow[];
+  const articleById = new Map(articleRows.map((a) => [a.id, a]));
 
-  let storiesByArticleId: Record<string, StoryRow> = {};
-  if (articleIds.length > 0) {
+  const { data: archivedStories, error: archivedErr } = await supabase
+    .from("stories")
+    .select(
+      "id,article_id,is_live,arc_headline,arc_summary,published_at,archived_at,verification",
+    )
+    .not("archived_at", "is", null)
+    .order("archived_at", { ascending: false })
+    .limit(100);
+
+  if (archivedErr) {
+    throw new Error(`Failed to load archived stories: ${archivedErr.message}`);
+  }
+
+  const missingArticleIds = [
+    ...new Set(
+      ((archivedStories ?? []) as AdminStoryRow[])
+        .map((s) => s.article_id)
+        .filter((id) => !articleById.has(id)),
+    ),
+  ];
+
+  if (missingArticleIds.length > 0) {
+    const { data: extraArticles, error: extraErr } = await supabase
+      .from("articles")
+      .select("id,title,category,published_at,feeds(source_name)")
+      .in("id", missingArticleIds);
+    if (extraErr) {
+      throw new Error(`Failed to load archived articles: ${extraErr.message}`);
+    }
+    for (const row of (extraArticles ?? []) as unknown as AdminArticleRow[]) {
+      articleById.set(row.id, row);
+    }
+  }
+
+  const allArticleIds = [...articleById.keys()];
+  let storiesByArticleId: Record<string, AdminStoryRow> = {};
+  if (allArticleIds.length > 0) {
     const { data: stories, error: storiesError } = await supabase
       .from("stories")
-      .select("id,article_id,is_live,arc_headline,published_at")
-      .in("article_id", articleIds)
-      .is("archived_at", null);
+      .select(
+        "id,article_id,is_live,arc_headline,arc_summary,published_at,archived_at,verification",
+      )
+      .in("article_id", allArticleIds);
 
     if (storiesError) {
       throw new Error(`Failed to load stories: ${storiesError.message}`);
     }
 
     storiesByArticleId = Object.fromEntries(
-      ((stories ?? []) as StoryRow[]).map((story) => [story.article_id, story]),
+      ((stories ?? []) as AdminStoryRow[]).map((story) => [
+        story.article_id,
+        story,
+      ]),
     );
   }
+
+  // Prefer the newest articles first, then archived-only rows at the end.
+  const mergedArticles = [
+    ...articleRows,
+    ...[...articleById.values()].filter(
+      (a) => !articleRows.some((r) => r.id === a.id),
+    ),
+  ];
 
   return (
     <main className="min-h-screen bg-[var(--background)] px-6 py-10 text-zinc-100 md:px-10">
@@ -76,7 +111,10 @@ export default async function AdminPage() {
         </div>
 
         <div className="mt-8">
-          <AdminSearchList articles={articleRows} storiesByArticleId={storiesByArticleId} />
+          <AdminSearchList
+            articles={mergedArticles}
+            storiesByArticleId={storiesByArticleId}
+          />
         </div>
       </div>
     </main>
