@@ -11,6 +11,10 @@ import {
   isUnverified,
 } from "@/lib/arc/verification";
 import { isStaleSource } from "@/lib/story-dates";
+import {
+  capArticleIds,
+  selectGenerateArticleIds,
+} from "@/lib/arc/select-generate-articles";
 
 export type ReviewSource = {
   id: string;
@@ -508,14 +512,24 @@ export function AdminGenreReview({
     setRegenerating((prev) => ({ ...prev, [story.id]: true }));
     setPublishError(null);
     try {
-      const ids = (story.article_ids.length > 0
-        ? story.article_ids
-        : [story.article_id]
-      )
-        .slice(0, 5)
-        .join(",");
+      const ids = selectGenerateArticleIds(
+        story.sources.map((s) => ({
+          id: s.id,
+          source_name: s.source_name,
+          published_at: s.published_at,
+        })),
+      );
+      const idParam = (
+        ids.length > 0
+          ? ids
+          : capArticleIds(
+              story.article_ids.length > 0
+                ? story.article_ids
+                : [story.article_id],
+            )
+      ).join(",");
       const res = await fetch(
-        `/api/arc/generate?id=${encodeURIComponent(ids)}&importance=${story.importance}`,
+        `/api/arc/generate?id=${encodeURIComponent(idParam)}&importance=${story.importance}`,
         { method: "POST", credentials: "same-origin" },
       );
       const data = (await res.json().catch(() => ({}))) as {

@@ -20,10 +20,17 @@ import type {
 } from "@/lib/admin/desk-data";
 import { DESK_TARGET_PER_GENRE } from "@/lib/admin/desk-data";
 import {
+  CANONICAL_CATEGORY_ORDER,
   normalizeStoryCategory,
   type StoryCategoryBucket,
 } from "@/lib/categories";
 import { isStaleSource } from "@/lib/story-dates";
+import {
+  capArticleIds,
+  selectGenerateArticleIds,
+} from "@/lib/arc/select-generate-articles";
+
+const SCAN_STALE_MS = 6 * 60 * 60 * 1000;
 
 type ClusterState =
   | { status: "pending" }
@@ -289,6 +296,58 @@ export function AdminDesk({
     setCachedAt(scanCachedAt);
   }, [initialGenres, initialClusters, scanCachedAt]);
 
+  // Morning / stale cache: quietly refresh each genre in the background.
+  useEffect(() => {
+    const stale =
+      !scanCachedAt ||
+      Date.now() - new Date(scanCachedAt).getTime() > SCAN_STALE_MS ||
+      Number.isNaN(new Date(scanCachedAt).getTime());
+    if (!stale) return;
+
+    let cancelled = false;
+    const buckets = CANONICAL_CATEGORY_ORDER.filter((bucket) =>
+      initialGenres.some((g) => g.bucket === bucket),
+    );
+
+    void (async () => {
+      for (const bucket of buckets) {
+        if (cancelled) return;
+        try {
+          const res = await fetch("/api/admin/editor/scan", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ category: bucket }),
+          });
+          const data = (await res.json().catch(() => ({}))) as {
+            clusters?: DeskCluster[];
+            cached_at?: string;
+          };
+          if (!res.ok || cancelled) continue;
+          const found = Array.isArray(data.clusters) ? data.clusters : [];
+          setClusters((prev) => [
+            ...prev.filter(
+              (c) => normalizeStoryCategory(c.category) !== bucket,
+            ),
+            ...found,
+          ]);
+          if (data.cached_at) setCachedAt(data.cached_at);
+        } catch {
+          // Background refresh is best-effort.
+        }
+      }
+      if (!cancelled) {
+        startTransition(() => router.refresh());
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Only on mount / when the server-reported cache timestamp changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanCachedAt]);
+
   const active = genres.find((g) => g.slug === activeSlug) ?? genres[0]!;
   const doneKeys = useMemo(
     () =>
@@ -401,7 +460,8 @@ export function AdminDesk({
     const key = clusterKey(cluster);
     setClusterStates((prev) => ({ ...prev, [key]: { status: "generating" } }));
     try {
-      const ids = cluster.article_ids.slice(0, 14).join(",");
+      const ids = selectGenerateArticleIds(cluster.articles).join(",");
+      if (!ids) throw new Error("No articles to generate from.");
       const res = await fetch(
         `/api/arc/generate?id=${encodeURIComponent(ids)}&importance=${cluster.importance}`,
         { method: "POST", credentials: "same-origin" },
@@ -545,14 +605,24 @@ export function AdminDesk({
     setRegenerating((prev) => ({ ...prev, [story.id]: true }));
     setPublishError(null);
     try {
-      const ids = (story.article_ids.length > 0
-        ? story.article_ids
-        : [story.article_id]
-      )
-        .slice(0, 5)
-        .join(",");
+      const ids = selectGenerateArticleIds(
+        story.sources.map((s) => ({
+          id: s.id,
+          source_name: s.source_name,
+          published_at: s.published_at,
+        })),
+      );
+      const idParam = (
+        ids.length > 0
+          ? ids
+          : capArticleIds(
+              story.article_ids.length > 0
+                ? story.article_ids
+                : [story.article_id],
+            )
+      ).join(",");
       const res = await fetch(
-        `/api/arc/generate?id=${encodeURIComponent(ids)}&importance=${story.importance}`,
+        `/api/arc/generate?id=${encodeURIComponent(idParam)}&importance=${story.importance}`,
         { method: "POST", credentials: "same-origin" },
       );
       const data = (await res.json().catch(() => ({}))) as {

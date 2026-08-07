@@ -9,6 +9,7 @@ import {
   type StoryCategoryBucket,
 } from "@/lib/categories";
 import { newestSourcePublishedAt } from "@/lib/story-dates";
+import { selectGenerateArticleIds } from "@/lib/arc/select-generate-articles";
 
 type ClusterArticle = {
   id: string;
@@ -420,7 +421,10 @@ export function AdminEditorPicks() {
   const handleGenerate = async (cluster: KeyedCluster) => {
     setStates((prev) => ({ ...prev, [cluster.key]: { status: "generating" } }));
     try {
-      const ids = cluster.article_ids.slice(0, 14).join(",");
+      const ids = selectGenerateArticleIds(cluster.articles).join(",");
+      if (!ids) {
+        throw new Error("No articles to generate from.");
+      }
       const res = await fetch(
         `/api/arc/generate?id=${encodeURIComponent(ids)}&importance=${cluster.importance}`,
         { method: "POST", credentials: "same-origin" },

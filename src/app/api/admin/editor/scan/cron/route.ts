@@ -3,9 +3,15 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { runEditorScan } from "@/app/api/admin/editor/scan/route";
+import {
+  normalizeStoryCategory,
+  parseReviewCategorySlug,
+  type StoryCategoryBucket,
+} from "@/lib/categories";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+/** One category per call — keep under free-plan / Actions timeouts. */
+export const maxDuration = 60;
 
 function safeEqualString(a: string, b: string): boolean {
   const bufA = Buffer.from(a, "utf8");
@@ -50,6 +56,35 @@ function authorize(request: Request): boolean {
   );
 }
 
+function parseCategory(request: Request): StoryCategoryBucket | null {
+  const url = new URL(request.url);
+  const fromQuery = url.searchParams.get("category")?.trim();
+  if (fromQuery) {
+    return (
+      parseReviewCategorySlug(fromQuery) ??
+      (normalizeStoryCategory(fromQuery) as StoryCategoryBucket)
+    );
+  }
+  return null;
+}
+
+async function parseCategoryFromBody(
+  request: Request,
+): Promise<StoryCategoryBucket | null> {
+  try {
+    const body = (await request.clone().json()) as { category?: unknown };
+    if (typeof body?.category === "string" && body.category.trim()) {
+      return (
+        parseReviewCategorySlug(body.category) ??
+        (normalizeStoryCategory(body.category) as StoryCategoryBucket)
+      );
+    }
+  } catch {
+    // no body
+  }
+  return null;
+}
+
 async function handle(request: Request) {
   if (!authorize(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -62,8 +97,23 @@ async function handle(request: Request) {
         { status: 500 },
       );
     }
-    const result = await runEditorScan();
-    return NextResponse.json({ ok: true, ...result });
+
+    const onlyBucket =
+      parseCategory(request) ?? (await parseCategoryFromBody(request));
+
+    if (!onlyBucket) {
+      return NextResponse.json(
+        {
+          error: "Missing category",
+          details:
+            "Pass ?category=World (or Finance, Tech, …). One category per call.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const result = await runEditorScan({ onlyBucket });
+    return NextResponse.json({ ok: true, category: onlyBucket, ...result });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Scan cron failed";
     return NextResponse.json({ error: message }, { status: 500 });

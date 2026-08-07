@@ -1,12 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/admin/cleanup",
-      "schedule": "0 2 * * 0"
-    },
-    {
-      "path": "/api/admin/editor/scan/cron",
-      "schedule": "20 0 * * *"
-    }
-  ]
-}
+{}
