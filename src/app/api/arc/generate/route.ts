@@ -12,6 +12,7 @@ import { clampImportance } from "@/lib/edition";
 import { verifyAndPersistStory } from "@/lib/arc/verify-story";
 import { isAllowedStoryCategoryDbValue } from "@/lib/categories";
 import {
+  EXTRACT_POLITE_DELAY_MS,
   resolveSourceText,
   type ExtractOutcome,
   type ResolvedSourceText,
@@ -29,6 +30,7 @@ Your voice rules:
 - Warmer than Reuters, more disciplined than BuzzFeed. Like a sharp friend explaining news over coffee.
 - State only what happened or what was said. Never predict, assess, or characterize significance with phrases like "will be crucial", "is expected to", "could be pivotal", "adds weight to", "underscores the implications". If a claim is about the future or about importance, it may only appear as an attributed statement someone actually made.
 - Do not characterize facts with framing verbs: "highlights", "underscores", "emphasizes", "reflects", "signals", "shows his/her/their commitment". State the fact; let it speak.
+- HARD RULE: Never write background or historical context from your own model knowledge. Every factual claim must trace to the ingested source text provided in the user message. If context is missing from the sources, omit it — do not fill gaps from what you happen to know.
 
 Density and honesty:
 - Extract and use EVERY concrete specific present in the input article: numbers, amounts, full names, titles, dates, places. Missing a number that was in the input is a failure.
@@ -281,11 +283,15 @@ export async function POST(request: Request) {
     const firstArticle = baseArticles[0]!;
     const firstId = articleIds[0]!;
 
-    // 3. Resolve full text (cache → extract → thin fallback). In parallel, so a
-    // slow publisher costs its own latency rather than the whole cluster's.
-    const settled = await Promise.allSettled(
-      baseArticles.map((article) =>
-        resolveSourceText({
+    // 3. Resolve full text (cache → extract → thin fallback). Sequential with a
+    // short polite delay between live fetches; robots.txt is checked per URL.
+    const articles: ArticleWithSource[] = [];
+    let liveFetches = 0;
+    for (const article of baseArticles) {
+      const politeDelayMs =
+        liveFetches > 0 ? EXTRACT_POLITE_DELAY_MS : 0;
+      try {
+        const resolved = await resolveSourceText({
           supabase,
           articleId: article.id,
           link: article.link,
@@ -293,35 +299,40 @@ export async function POST(request: Request) {
           fullText: article.full_text,
           fullTextFetchedAt: article.full_text_fetched_at,
           fullTextFailedAt: article.full_text_failed_at,
-        }),
-      ),
-    );
-
-    const articles: ArticleWithSource[] = baseArticles.map((article, index) => {
-      const result = settled[index]!;
-      if (result.status === "fulfilled") {
-        return { ...article, resolved: result.value };
+          politeDelayMs,
+        });
+        if (
+          resolved.outcome === "extracted" ||
+          resolved.outcome === "too_short" ||
+          resolved.outcome === "timeout" ||
+          resolved.outcome === "failed" ||
+          resolved.outcome === "robots_disallow"
+        ) {
+          liveFetches += 1;
+        }
+        articles.push({ ...article, resolved });
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error ? err.message : String(err);
+        console.error(
+          `[arc/generate] source resolve failed for ${article.id}:`,
+          message,
+        );
+        const summary = (article.summary ?? "").trim();
+        articles.push({
+          ...article,
+          resolved: {
+            articleId: article.id,
+            quality: summary.length >= 500 ? "full" : "thin",
+            text: summary || "(no summary available)",
+            textLength: summary.length,
+            fromCache: true,
+            outcome: "failed",
+            durationMs: 0,
+          },
+        });
       }
-      // Resolution itself broke (not just the fetch) — keep the summary and go on.
-      const message =
-        result.reason instanceof Error
-          ? result.reason.message
-          : String(result.reason);
-      console.error(`[arc/generate] source resolve failed for ${article.id}:`, message);
-      const summary = (article.summary ?? "").trim();
-      return {
-        ...article,
-        resolved: {
-          articleId: article.id,
-          quality: summary.length >= 500 ? "full" : "thin",
-          text: summary || "(no summary available)",
-          textLength: summary.length,
-          fromCache: true,
-          outcome: "failed",
-          durationMs: 0,
-        },
-      };
-    });
+    }
 
     const sourceQuality: Array<{
       article_id: string;

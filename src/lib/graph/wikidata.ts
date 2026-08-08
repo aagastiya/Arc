@@ -11,7 +11,7 @@ const TIMEOUT_MS = 5_000;
 const SEARCH_LIMIT = 12;
 const MAX_CANDIDATES = 5;
 
-export type EntityKind = "person" | "organization";
+export type EntityKind = "person" | "organization" | "place";
 
 export type WikidataCandidate = {
   id: string;
@@ -28,23 +28,48 @@ export type WikidataLookup =
 /** instance-of values that make something a person. */
 const HUMAN_TYPES = new Set(["Q5"]);
 
-/**
- * instance-of values that make something an organization, loosely. Arc files
- * everything that is not a person as an organization, so countries, courts and
- * ministries belong here too.
- */
-const ORG_TYPES = new Set([
+/** Countries, cities, regions — Arc kind=place. */
+const PLACE_TYPES = new Set([
   "Q6256", // country
   "Q3624078", // sovereign state
   "Q7275", // state
   "Q107390", // federal state
   "Q515", // city
-  "Q41487", // court
+  "Q1549591", // big city
+  "Q1637706", // city with millions of inhabitants
+  "Q35657", // U.S. state
+  "Q10864048", // first-level administrative country subdivision
+  "Q13220204", // second-level administrative country subdivision
+  "Q82794", // geographic region
+  "Q618123", // geographical object
+  "Q2221906", // geographic location
+  "Q5107", // continent
+  "Q23442", // island
+  "Q33837", // archipelago
+  "Q4022", // river
+  "Q39816", // gulf / sea?
+  "Q34763", // peninsula
+  "Q486972", // human settlement
+  "Q3957", // town
+  "Q532", // village
+  "Q123705", // neighborhood
+  "Q56061", // administrative territorial entity
+  "Q1048835", // political territorial entity
+  "Q161243", // national capital
+  "Q5119", // capital city
   "Q19953632", // former administrative territorial entity
+  "Q1250464", // realm
+]);
+
+/**
+ * instance-of values that make something an organization, loosely.
+ */
+const ORG_TYPES = new Set([
+  "Q41487", // court
   "Q11204", // legislative body / parliament
   "Q2919801", // parliamentary committee
+  "Q192980", // ministry — keep typo? was Q192350
   "Q192350", // ministry
-  "Q1250464", // realm
   "Q1006644", // supreme court
   "Q1770945", // ministry of a country
   "Q43229", // organization
@@ -90,6 +115,17 @@ const ORG_SIGNAL_PROPERTIES = [
   "P112", // founded by
   "P1128", // employees
   "P749", // parent organization
+];
+
+/** Claims that suggest a geographic place. */
+const PLACE_SIGNAL_PROPERTIES = [
+  "P17", // country
+  "P131", // located in the administrative territorial entity
+  "P625", // coordinate location
+  "P1082", // population
+  "P2046", // area
+  "P36", // capital
+  "P1376", // capital of
 ];
 
 type Claim = {
@@ -150,10 +186,18 @@ function isHuman(entity: WikidataEntity): boolean {
   return claimIds(entity, "P31").some((t) => HUMAN_TYPES.has(t));
 }
 
-/** Right sort of thing for this kind — a boost, not a gate, for organizations. */
+/** Right sort of thing for this kind — a boost, not a gate, for orgs/places. */
 function isPlausible(entity: WikidataEntity, kind: EntityKind): boolean {
   if (kind === "person") return isHuman(entity);
   if (isHuman(entity)) return false;
+  if (kind === "place") {
+    if (claimIds(entity, "P31").some((t) => PLACE_TYPES.has(t))) return true;
+    return PLACE_SIGNAL_PROPERTIES.some(
+      (property) => (entity.claims?.[property]?.length ?? 0) > 0,
+    );
+  }
+  // organization — places are not orgs
+  if (claimIds(entity, "P31").some((t) => PLACE_TYPES.has(t))) return false;
   if (claimIds(entity, "P31").some((t) => ORG_TYPES.has(t))) return true;
   return ORG_SIGNAL_PROPERTIES.some(
     (property) => (entity.claims?.[property]?.length ?? 0) > 0,
@@ -313,7 +357,10 @@ export async function lookupEntity(
     // right sort of thing wins on points, and how heavily documented an item is
     // stands in for how likely a newsroom means that one.
     const scored = entities
-      .filter((entity) => (kind === "person" ? isHuman(entity) : !isHuman(entity)))
+      .filter((entity) => {
+        if (kind === "person") return isHuman(entity);
+        return !isHuman(entity);
+      })
       .map((entity) => {
         const exact = namesOf(entity).includes(wanted);
         const plausible = isPlausible(entity, kind);
@@ -327,7 +374,7 @@ export async function lookupEntity(
           score: claimCount(entity) * (exact ? 3 : 1) * (plausible ? 5 : 1),
         };
       })
-      // An organization of an unexpected type is only worth considering when the
+      // An org/place of an unexpected type is only worth considering when the
       // name matches exactly; otherwise the search engine's stray hits get in.
       .filter((c) => c.plausible || c.exact)
       // Wikidata often does not list the short form as an alias — nothing on

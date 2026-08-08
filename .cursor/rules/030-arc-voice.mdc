@@ -15,7 +15,8 @@ The voice is the product. Apply to every reader-facing string.
 - Neutral. No opinion words ("shocking", "outrageous", "slams").
 - No advice to the reader ("stay safe", "stay informed"). Just state what happened.
 - Warmer than Reuters, more disciplined than BuzzFeed — a sharp friend explaining the news over coffee.
-- Context is the point: place the story in the longer topic it belongs to.
+- Context is the point: place the story in the longer topic it belongs to — but only with facts that appear in the ingested sources.
+- HARD RULE: Never write background or historical context from model knowledge. Every factual claim must trace to ingested source text. If context is missing from the sources, omit it; do not fill gaps.
 
 ## Output shapes
 - **headline:** short, declarative, no clickbait or colon-teasers.

@@ -73,7 +73,12 @@ export async function POST(
       );
     }
 
-    const kind: EntityKind = row.kind === "person" ? "person" : "organization";
+    const kind: EntityKind =
+      row.kind === "person"
+        ? "person"
+        : row.kind === "place"
+          ? "place"
+          : "organization";
     const result = await lookupEntity(row.name as string, kind);
 
     if (result.status === "found") {

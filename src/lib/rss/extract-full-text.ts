@@ -11,6 +11,9 @@ export const EXTRACT_TIMEOUT_MS = 10_000;
 /** How long a failed source is left alone before another attempt. */
 export const EXTRACT_RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
 
+/** Polite gap between live fetches inside one generate call. */
+export const EXTRACT_POLITE_DELAY_MS = 800;
+
 export type SourceQuality = "full" | "thin";
 
 export type ExtractOutcome =
@@ -20,6 +23,7 @@ export type ExtractOutcome =
   | "timeout" // aborted at EXTRACT_TIMEOUT_MS
   | "failed" // network or parse error
   | "cooldown" // recent failure, not retried yet
+  | "robots_disallow" // robots.txt forbids this path
   | "no_link";
 
 export type ResolvedSourceText = {
@@ -34,7 +38,7 @@ export type ResolvedSourceText = {
 
 export type ExtractResult = {
   text: string;
-  outcome: Extract<ExtractOutcome, "extracted" | "timeout" | "failed">;
+  outcome: "extracted" | "timeout" | "failed" | "robots_disallow";
   durationMs: number;
 };
 
@@ -48,9 +52,105 @@ function normalizeExtracted(raw: string | null | undefined): string {
     .trim();
 }
 
+type RobotsRules = {
+  disallows: string[];
+  allows: string[];
+};
+
+const robotsCache = new Map<string, { rules: RobotsRules; fetchedAt: number }>();
+const ROBOTS_CACHE_MS = 60 * 60 * 1000;
+
+function pathMatchesRule(path: string, rule: string): boolean {
+  if (!rule) return false;
+  if (rule === "/") return true;
+  return path.startsWith(rule);
+}
+
+/**
+ * Minimal robots.txt check for ArcBot / * user-agents. Fail-open on fetch errors
+ * so a dead robots endpoint does not block generation.
+ */
+export async function isUrlAllowedByRobots(url: string): Promise<boolean> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+
+  const origin = parsed.origin;
+  const cached = robotsCache.get(origin);
+  let rules: RobotsRules;
+  if (cached && Date.now() - cached.fetchedAt < ROBOTS_CACHE_MS) {
+    rules = cached.rules;
+  } else {
+    try {
+      const res = await fetch(`${origin}/robots.txt`, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (compatible; ArcBot/1.0; +https://arc.news)",
+          Accept: "text/plain,*/*",
+        },
+        signal: AbortSignal.timeout(4_000),
+      });
+      if (!res.ok) {
+        rules = { disallows: [], allows: [] };
+      } else {
+        rules = parseRobotsTxt(await res.text());
+      }
+    } catch {
+      rules = { disallows: [], allows: [] };
+    }
+    robotsCache.set(origin, { rules, fetchedAt: Date.now() });
+  }
+
+  const path = `${parsed.pathname}${parsed.search}`;
+  const allowed = rules.allows.some((r) => pathMatchesRule(path, r));
+  if (allowed) return true;
+  const blocked = rules.disallows.some((r) => pathMatchesRule(path, r));
+  return !blocked;
+}
+
+function parseRobotsTxt(body: string): RobotsRules {
+  const lines = body.split(/\r?\n/);
+  let inRelevant = false;
+  const disallows: string[] = [];
+  const allows: string[] = [];
+
+  for (const raw of lines) {
+    const line = raw.replace(/#.*$/, "").trim();
+    if (!line) continue;
+    const colon = line.indexOf(":");
+    if (colon === -1) continue;
+    const key = line.slice(0, colon).trim().toLowerCase();
+    const value = line.slice(colon + 1).trim();
+
+    if (key === "user-agent") {
+      const agent = value.toLowerCase();
+      inRelevant = agent === "*" || agent.includes("arcbot");
+      continue;
+    }
+    if (!inRelevant) continue;
+    if (key === "disallow" && value) disallows.push(value);
+    if (key === "allow" && value) allows.push(value);
+  }
+
+  return { disallows, allows };
+}
+
 /** Fetch + extract main article text, giving up after EXTRACT_TIMEOUT_MS. */
 export async function extractArticleFullText(url: string): Promise<ExtractResult> {
   const started = Date.now();
+
+  const allowed = await isUrlAllowedByRobots(url);
+  if (!allowed) {
+    return {
+      text: "",
+      outcome: "robots_disallow",
+      durationMs: Date.now() - started,
+    };
+  }
+
   try {
     const article = await extract(url, undefined, {
       headers: {
@@ -96,12 +196,19 @@ function resolved(
   };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Resolve source body for generation: reuse stored full text when there is
  * any, otherwise fetch once (bounded by EXTRACT_TIMEOUT_MS) and fall back to
  * the RSS summary. Only a successful fetch is cached permanently; a failure is
  * recorded so the same source is retried on the next generate after the
  * cooldown rather than being written off for good.
+ *
+ * Pass `politeDelayMs` > 0 when this call follows another live fetch in the
+ * same generate request.
  */
 export async function resolveSourceText(opts: {
   supabase: SupabaseClient;
@@ -111,6 +218,8 @@ export async function resolveSourceText(opts: {
   fullText: string | null;
   fullTextFetchedAt: string | null;
   fullTextFailedAt?: string | null;
+  /** Wait this many ms before a live network fetch (not cache hits). */
+  politeDelayMs?: number;
 }): Promise<ResolvedSourceText> {
   const summary = (opts.summary ?? "").trim();
   const stored = (opts.fullText ?? "").trim();
@@ -131,8 +240,22 @@ export async function resolveSourceText(opts: {
     return resolved(opts.articleId, summary, "cooldown", true, 0);
   }
 
+  if (opts.politeDelayMs && opts.politeDelayMs > 0) {
+    await sleep(opts.politeDelayMs);
+  }
+
   // One attempt per call — a retry happens on the next generate, not this one.
   const attempt = await extractArticleFullText(link);
+
+  if (attempt.outcome === "robots_disallow") {
+    return resolved(
+      opts.articleId,
+      summary,
+      "robots_disallow",
+      false,
+      attempt.durationMs,
+    );
+  }
 
   if (attempt.text.length >= THIN_TEXT_THRESHOLD) {
     await opts.supabase
@@ -153,6 +276,7 @@ export async function resolveSourceText(opts: {
     );
   }
 
+  // Other misses mark cooldown so we do not hammer.
   await opts.supabase
     .from("articles")
     .update({ full_text_failed_at: new Date().toISOString() })

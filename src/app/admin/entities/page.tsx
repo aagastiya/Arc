@@ -15,6 +15,9 @@ export const dynamic = "force-dynamic";
 
 const FILTERS = [
   { key: "all", label: "All" },
+  { key: "person", label: "People" },
+  { key: "organization", label: "Orgs" },
+  { key: "place", label: "Places" },
   { key: "unverified", label: "Unverified" },
   { key: "ambiguous", label: "Ambiguous" },
   { key: "unanchored", label: "Unanchored" },
@@ -110,12 +113,18 @@ export default async function AdminEntitiesPage({
 
   const counts = {
     all: entities.length,
+    person: entities.filter((e) => e.kind === "person").length,
+    organization: entities.filter((e) => e.kind === "organization").length,
+    place: entities.filter((e) => e.kind === "place").length,
     unverified: entities.filter((e) => e.identity_verified_at === null).length,
     ambiguous: entities.filter((e) => e.candidates.length > 0).length,
     unanchored: entities.filter(isUnanchoredEntity).length,
   } satisfies Record<FilterKey, number>;
 
   const visible = entities.filter((entity) => {
+    if (active === "person") return entity.kind === "person";
+    if (active === "organization") return entity.kind === "organization";
+    if (active === "place") return entity.kind === "place";
     if (active === "unverified") return entity.identity_verified_at === null;
     if (active === "ambiguous") return entity.candidates.length > 0;
     if (active === "unanchored") return isUnanchoredEntity(entity);

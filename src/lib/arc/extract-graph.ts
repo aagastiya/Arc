@@ -13,7 +13,7 @@ export const GRAPH_EXTRACT_PROMPT = `You are Arc's knowledge-graph extractor. Gi
 {
   "entities": [
     {
-      "kind": "person" | "organization",
+      "kind": "person" | "organization" | "place",
       "name": "the name a newspaper reader knows",
       "aliases": ["other names used in the text"],
       "short_description": "one factual line, max 15 words",
@@ -24,15 +24,17 @@ export const GRAPH_EXTRACT_PROMPT = `You are Arc's knowledge-graph extractor. Gi
     "action": "match" | "propose" | "none",
     "event_id": "uuid when action is match, else omit or empty",
     "title": "when action is propose, short event title e.g. US–Iran conflict",
-    "open_question": "when action is propose, the stake as a question"
+    "open_question": "when action is propose, a specific resolvable stake as a question"
   }
 }
 
 Rules:
 - Max 8 entities. Fewer, stronger entities beats more.
-- Graph-worthiness: only extract people/organizations likely to recur in news coverage — public officials, public figures, companies, institutions, agencies. NEVER extract private individuals who are merely quoted or affected (residents, witnesses, victims, bystanders). If unsure, leave them out.
+- kind: "person" for people; "organization" for companies, agencies, institutions, parties, armed forces, courts; "place" for countries, cities, regions, territories, and geographic features. Countries and cities are places, NEVER organizations.
+- Graph-worthiness: only extract people, organizations, and places likely to recur in news coverage — public officials, public figures, companies, institutions, agencies, and named places central to the story. NEVER extract private individuals who are merely quoted or affected (residents, witnesses, victims, bystanders). If unsure, leave them out.
 - Common name: "name" is the name most commonly used for this entity IN THE SOURCE TEXT — the form a newspaper reader already knows. Prefer "Bernie Moreno" over "Bernie Moreno-Mejía" when the story mostly says Moreno; prefer "National Cyber Security Centre" over a longer official form the text never uses.
 - Copy the spelling exactly as it appears in the source. Never "correct", expand, or reformat a name from your own knowledge.
+- Never invent background, biography, or historical context from your own knowledge. Every factual claim in short_description must come from the story text; if the text does not support a description, leave short_description empty.
 - Never output possessive or descriptive phrases as names. "UK's National Cyber Security Centre" → "National Cyber Security Centre". "Iran's military" is not a name — skip it, or use only a proper noun the text gives for that force. Strip leading possessives ("X's …") yourself before writing the name.
 - Prefer the fullest form that actually appears in the text when several forms appear equally often (e.g. "John Farinacci", not "Farinacci"). If the article only ever gives a partial name, use that.
 - role = "subject" if the story is primarily about them; otherwise "mentioned".
@@ -41,11 +43,14 @@ Rules:
 - aliases: only names that appear in the story text; may be [].
 - Running events are provided below. action = "match" only if this story clearly belongs to one listed event — use that event's id.
 - action = "propose" ONLY if this situation will clearly keep producing ongoing news (a durable thread). Provide title + open_question.
+- open_question rules (propose only): must name a specific outcome; must be answerable yes/no or A-or-B; must be resolvable by a future news event. BAD: "How will this affect US-Iran relations?" GOOD: "Does the Hormuz deal hold and reopen the strait, or does the fighting resume?"
 - action = "none" if neither match nor a durable new thread fits. Prefer "none" over a weak propose.
-- Never invent people, organizations, or event ids not justified by the story / candidate list.`;
+- Never invent people, organizations, places, or event ids not justified by the story / candidate list.`;
+
+export type GraphEntityKind = "person" | "organization" | "place";
 
 export type GraphEntityOut = {
-  kind: "person" | "organization";
+  kind: GraphEntityKind;
   name: string;
   aliases: string[];
   short_description: string;
@@ -91,6 +96,15 @@ export const ENTITY_SELECT =
 
 function lower(s: string): string {
   return s.trim().toLowerCase();
+}
+
+/** Match proposed event titles to running ones the same way the editor scan does. */
+export function normalizeEventTitle(title: string): string {
+  return title
+    .trim()
+    .toLowerCase()
+    .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-") // dash variants → ASCII hyphen
+    .replace(/\s+/g, " ");
 }
 
 const GROUNDING_STOPWORDS = new Set([
@@ -219,7 +233,7 @@ function buildStoryText(input: {
 
 function parseExtraction(raw: unknown): {
   entities: Array<{
-    kind: "person" | "organization";
+    kind: GraphEntityKind;
     name: string;
     aliases: string[];
     short_description: string;
@@ -237,7 +251,7 @@ function parseExtraction(raw: unknown): {
 
   const entitiesRaw = Array.isArray(obj.entities) ? obj.entities : [];
   const entities: Array<{
-    kind: "person" | "organization";
+    kind: GraphEntityKind;
     name: string;
     aliases: string[];
     short_description: string;
@@ -247,7 +261,10 @@ function parseExtraction(raw: unknown): {
   for (const item of entitiesRaw.slice(0, 8)) {
     if (!item || typeof item !== "object") continue;
     const e = item as Record<string, unknown>;
-    const kind = e.kind === "person" || e.kind === "organization" ? e.kind : null;
+    const kind =
+      e.kind === "person" || e.kind === "organization" || e.kind === "place"
+        ? e.kind
+        : null;
     const role = e.role === "subject" || e.role === "mentioned" ? e.role : null;
     if (!kind || !role || typeof e.name !== "string" || !e.name.trim()) continue;
     const name = normalizeExtractedEntityName(e.name);
@@ -315,7 +332,7 @@ type ResolvedIdentity = {
  * when different, becomes an alias — the QID is the link, not a rename.
  */
 async function resolveNewIdentity(
-  ent: { kind: "person" | "organization"; name: string; short_description: string },
+  ent: { kind: GraphEntityKind; name: string; short_description: string },
   storyText: string,
 ): Promise<ResolvedIdentity> {
   const grounded = isGroundedIn(ent.short_description, storyText);
@@ -385,6 +402,9 @@ export async function extractAndPersistGraph(opts: {
 
   const running = (runningRows ?? []) as RunningEvent[];
   const runningIds = new Set(running.map((e) => e.id));
+  const runningByTitle = new Map(
+    running.map((e) => [normalizeEventTitle(e.title), e]),
+  );
 
   const storyText = buildStoryText({
     headline: opts.headline,
@@ -626,38 +646,63 @@ export async function extractAndPersistGraph(opts: {
     extracted.event.action === "propose" &&
     extracted.event.title
   ) {
-    const { data: newEvent, error: evErr } = await opts.supabase
-      .from("events")
-      .insert({
-        title: extracted.event.title,
-        open_question: extracted.event.open_question || "",
-        status: "running",
-      })
-      .select("id,title,open_question")
-      .single();
-
-    if (evErr || !newEvent) {
-      throw new Error(`Failed to insert event: ${evErr?.message ?? "unknown"}`);
-    }
-
-    const { error: seErr } = await opts.supabase.from("story_events").upsert(
-      {
-        story_id: opts.storyId,
-        event_id: newEvent.id as string,
-        approved: false,
-      },
-      { onConflict: "story_id,event_id" },
+    // Same guard as the editor scan: a proposed title that already exists as a
+    // running event is a match, not a new insert.
+    const duplicate = runningByTitle.get(
+      normalizeEventTitle(extracted.event.title),
     );
-    if (seErr) {
-      throw new Error(`Failed to link proposed event: ${seErr.message}`);
-    }
+    if (duplicate) {
+      const { error: seErr } = await opts.supabase.from("story_events").upsert(
+        {
+          story_id: opts.storyId,
+          event_id: duplicate.id,
+          approved: false,
+        },
+        { onConflict: "story_id,event_id" },
+      );
+      if (seErr) {
+        throw new Error(`Failed to link story event: ${seErr.message}`);
+      }
+      eventOut = {
+        action: "match",
+        event_id: duplicate.id,
+        title: duplicate.title,
+        open_question: duplicate.open_question || null,
+      };
+    } else {
+      const { data: newEvent, error: evErr } = await opts.supabase
+        .from("events")
+        .insert({
+          title: extracted.event.title,
+          open_question: extracted.event.open_question || "",
+          status: "running",
+        })
+        .select("id,title,open_question")
+        .single();
 
-    eventOut = {
-      action: "propose",
-      event_id: newEvent.id as string,
-      title: newEvent.title as string,
-      open_question: (newEvent.open_question as string) || "",
-    };
+      if (evErr || !newEvent) {
+        throw new Error(`Failed to insert event: ${evErr?.message ?? "unknown"}`);
+      }
+
+      const { error: seErr } = await opts.supabase.from("story_events").upsert(
+        {
+          story_id: opts.storyId,
+          event_id: newEvent.id as string,
+          approved: false,
+        },
+        { onConflict: "story_id,event_id" },
+      );
+      if (seErr) {
+        throw new Error(`Failed to link proposed event: ${seErr.message}`);
+      }
+
+      eventOut = {
+        action: "propose",
+        event_id: newEvent.id as string,
+        title: newEvent.title as string,
+        open_question: (newEvent.open_question as string) || "",
+      };
+    }
   }
 
   return { entities: graphEntities, event: eventOut };

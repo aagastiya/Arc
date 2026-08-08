@@ -170,7 +170,15 @@ export function AdminEntityRow({
           className="min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1 text-left"
         >
           <span className="text-sm font-medium text-zinc-100">{entity.name}</span>
-          <span className="ml-2 text-[10px] uppercase tracking-wider text-zinc-600">
+          <span
+            className={`ml-2 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+              entity.kind === "place"
+                ? "border-emerald-500/30 text-emerald-400/90"
+                : entity.kind === "organization"
+                  ? "border-sky-500/30 text-sky-400/90"
+                  : "border-zinc-700 text-zinc-500"
+            }`}
+          >
             {entity.kind}
           </span>
           <span className="ml-2 inline-flex align-middle">

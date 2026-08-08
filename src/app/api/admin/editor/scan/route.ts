@@ -132,7 +132,11 @@ function isNonStoryItem(title: string): boolean {
 
 /** Comparison key for event titles, so proposals can't duplicate a running event. */
 function normalizeTitle(title: string): string {
-  return title.trim().toLowerCase().replace(/\s+/g, " ");
+  return title
+    .trim()
+    .toLowerCase()
+    .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-")
+    .replace(/\s+/g, " ");
 }
 
 type ArticleRow = {

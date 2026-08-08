@@ -288,7 +288,11 @@ export function AdminGraphPanel({ storyId }: AdminGraphPanelProps) {
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-400">
-                            {entity.kind === "organization" ? "org" : "person"}
+                            {entity.kind === "organization"
+                              ? "org"
+                              : entity.kind === "place"
+                                ? "place"
+                                : "person"}
                           </span>
                           <span className="font-medium text-zinc-100">
                             {entity.name}
